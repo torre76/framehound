@@ -1,0 +1,107 @@
+---
+description: 
+globs: **/*.go
+alwaysApply: false
+---
+ # Golang Commenting Standards
+
+## Context
+- When writing Go code in any file with `.go` extension
+- When documenting packages, functions, types, variables, and constants
+- When explaining complex logic or non-obvious implementation details
+
+## Requirements
+
+### Doc Comments (Package/Exported Declarations)
+- Every exported (capitalized) name MUST have a doc comment
+- Doc comments appear immediately before declarations with no intervening newlines
+- Begin with the name of the item being documented and a verb (e.g., "Package math provides...")
+- Write in complete sentences with proper capitalization and punctuation
+- Focus on WHAT and WHY, not HOW (implementation details)
+- For packages, place adjacent to the package clause with no blank line
+
+### Function Comments
+- Begin with the function name: `// FunctionName does X with Y to achieve Z`
+- Explain purpose, not implementation (unless implementation is non-obvious)
+- Document parameters and return values for complex functions
+- Include usage examples for non-trivial functions
+- Mention any side effects, preconditions, or postconditions
+
+### Type Comments
+- Explain the purpose and behavior of the type
+- Document any invariants or constraints
+- For interfaces, explain the expected behavior of implementations
+
+### Variable/Constant Comments
+- Group related variables/constants under a single comment when appropriate
+- For individual variables, explain purpose and usage context
+- Include examples for non-obvious variables
+
+### Implementation Comments
+- Use sparingly within function bodies
+- Focus on WHY, not WHAT (code should be self-explanatory)
+- Explain complex algorithms, optimizations, or workarounds
+- Document any non-obvious edge cases or limitations
+- Flag any potential future issues with `// TODO: description`
+
+### Comment Style
+- Use `//` for single-line comments (with one space after slashes)
+- For multi-line comments, prefer multiple `//` lines over `/* */` blocks
+- Align comments with the code they describe
+- Keep comments concise and to the point
+- Use proper English with correct spelling and grammar
+
+### AI-Friendly Practices
+- Include clear section markers for complex functions (`// Step 1: Initialize...`)
+- Document the "why" behind non-obvious design decisions
+- Explain trade-offs and alternative approaches considered
+- Use consistent terminology throughout the codebase
+- For complex algorithms, include a high-level description of the approach
+
+## Examples
+
+<example>
+// Package calculator provides basic arithmetic operations.
+// It handles integer and floating-point calculations with proper error handling.
+package calculator
+
+// Add returns the sum of two integers.
+// It properly handles potential overflow by using int64 internally.
+func Add(a, b int) int {
+    // Implementation
+}
+
+// Config holds the configuration parameters for the calculator.
+// All fields are optional and will use sensible defaults if not specified.
+type Config struct {
+    // MaxPrecision defines the maximum decimal places for floating operations.
+    // Default is 10 if not specified.
+    MaxPrecision int
+    
+    // EnableLogging determines whether operations should be logged.
+    EnableLogging bool
+}
+</example>
+
+<example type="invalid">
+// this function adds two numbers
+func add(a, b int) int {
+    // add the numbers
+    return a + b
+}
+
+// Configuration struct
+type Config struct {
+    MaxPrecision int // max precision
+    EnableLogging bool // enables logging
+}
+</example>
+
+## Critical Rules
+- Every exported name MUST have a doc comment
+- Comments should explain WHY, not just WHAT
+- Write in complete sentences with proper capitalization and punctuation
+- Keep comments up-to-date when code changes
+- Don't state the obvious or repeat what the code clearly shows
+- Use consistent terminology throughout the codebase
+- Format comments to be readable both in code and in generated documentation 

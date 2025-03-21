@@ -1,0 +1,119 @@
+---
+description: 
+globs: **/*.go
+alwaysApply: false
+---
+# Go Standard Output Guidelines
+
+## Context
+- When writing Go code that produces standard output
+- When displaying information to users via console
+- When logging information that may be redirected to files
+
+## Requirements
+- Use the `fatih/color` library for all styled output in terminal
+- Format summary lines in bold cyan
+- Format important values in bold
+- Maintain consistent styling across the application
+- Remove styling when output is redirected to files
+
+## Implementation Details
+
+### Library Import
+```go
+import (
+    "github.com/fatih/color"
+    "os"
+)
+```
+
+### Style Constants
+```go
+var (
+    // Summary style - bold cyan
+    SummaryStyle = color.New(color.FgCyan, color.Bold)
+    
+    // Important value style - bold
+    ValueStyle = color.New(color.Bold)
+    
+    // Check if output is being redirected to a file
+    isOutputRedirected = !color.NoColor
+)
+```
+
+### Output Functions
+```go
+// PrintSummary prints a summary line in bold cyan
+func PrintSummary(message string) {
+    if isOutputRedirected {
+        fmt.Println(message)
+        return
+    }
+    SummaryStyle.Println(message)
+}
+
+// PrintKeyValue prints a key-value pair with the value in bold
+func PrintKeyValue(key, value string) {
+    if isOutputRedirected {
+        fmt.Printf("%s: %s\n", key, value)
+        return
+    }
+    fmt.Printf("%s: ", key)
+    ValueStyle.Println(value)
+}
+```
+
+## Examples
+<example>
+✅ Using the library correctly:
+```go
+// Import the library
+import "github.com/fatih/color"
+
+func displayResults() {
+    // Summary line in bold cyan
+    color.New(color.FgCyan, color.Bold).Println("Operation completed successfully")
+    
+    // Key-value with important value in bold
+    fmt.Print("Total processed: ")
+    color.New(color.Bold).Println("42 items")
+    
+    // Check for redirection
+    if !color.NoColor {
+        // Apply styling
+        color.New(color.FgCyan, color.Bold).Println("Output is going to terminal")
+    } else {
+        // No styling
+        fmt.Println("Output is being redirected")
+    }
+}
+```
+</example>
+
+<example type="invalid">
+❌ Not using the library:
+```go
+fmt.Println("Operation completed successfully")
+fmt.Printf("Total processed: %d items\n", 42)
+```
+
+❌ Inconsistent styling:
+```go
+// Different styles for summary lines
+color.New(color.FgCyan, color.Bold).Println("First summary")
+color.New(color.FgGreen, color.Bold).Println("Second summary")
+```
+
+❌ Not handling redirection:
+```go
+// Always applies styling without checking for redirection
+color.New(color.FgCyan, color.Bold).Println("This might go to a file")
+```
+</example>
+
+## Critical Rules
+- Always import and use the `fatih/color` library for terminal output
+- Always format summary lines in bold cyan
+- Always format important values in bold
+- Always check for file redirection to remove styling when appropriate
+- Always maintain consistent styling across the application 

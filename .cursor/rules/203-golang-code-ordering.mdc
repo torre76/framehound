@@ -1,0 +1,130 @@
+---
+description: 
+globs: **/*.go
+alwaysApply: false
+---
+# Golang Code Ordering Standards
+
+## Context
+- When writing or refactoring Go code files
+- When organizing constants, variables, and functions
+- When reviewing code structure for consistency
+
+## Requirements
+
+### General Ordering
+1. Constants (const) and variables (var) come before functions
+2. Private (unexported) elements come before public (exported) elements
+3. Within each category, items should be in alphabetical order
+
+### Detailed Ordering Rules
+1. File organization should follow this sequence:
+   - Package declaration and package documentation
+   - Import statements
+   - Private constants (alphabetical order)
+   - Public constants (alphabetical order)
+   - Private variables (alphabetical order)
+   - Public variables (alphabetical order)
+   - Type definitions
+   - Private functions (alphabetical order)
+   - Public functions (alphabetical order)
+
+2. Function organization:
+   - Helper/utility functions should be placed before the functions that use them
+   - Methods for a type should be grouped together
+   - Within each group, maintain alphabetical ordering
+
+## Examples
+
+<example>
+// Package example demonstrates proper code ordering.
+package example
+
+import (
+	"fmt"
+	"strings"
+)
+
+// Private constants (alphabetical)
+const (
+	defaultTimeout = 30
+	errorMessage   = "operation failed"
+)
+
+// Public constants (alphabetical)
+const (
+	DefaultRetries = 3
+	MaxConnections = 10
+)
+
+// Private variables (alphabetical)
+var (
+	cache    map[string]string
+	isActive bool
+)
+
+// Public variables (alphabetical)
+var (
+	GlobalConfig map[string]interface{}
+	Version      string
+)
+
+// Private functions (alphabetical)
+func formatError(msg string) string {
+	return fmt.Sprintf("error: %s", msg)
+}
+
+func parseInput(input string) []string {
+	return strings.Split(input, ",")
+}
+
+// Public functions (alphabetical)
+func ProcessData(data []byte) ([]byte, error) {
+	// Implementation
+	return nil, nil
+}
+
+func ValidateInput(input string) bool {
+	// Implementation
+	return true
+}
+</example>
+
+<example type="invalid">
+// Package example demonstrates improper code ordering.
+package example
+
+import (
+	"fmt"
+	"strings"
+)
+
+// Public constants before private (incorrect)
+const MaxConnections = 10
+const defaultTimeout = 30
+
+// Functions before constants and variables (incorrect)
+func ValidateInput(input string) bool {
+	return true
+}
+
+// Public function before private function (incorrect)
+func ProcessData(data []byte) ([]byte, error) {
+	return nil, nil
+}
+
+func parseInput(input string) []string {
+	return strings.Split(input, ",")
+}
+
+// Variables after functions (incorrect)
+var isActive bool
+var Version string
+</example>
+
+## Critical Rules
+- Private (unexported) elements MUST come before public (exported) elements
+- Constants and variables MUST come before functions
+- All elements within the same category MUST be in alphabetical order
+- Maintain consistent grouping of related elements
+- Package documentation and imports always come first 

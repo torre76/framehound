@@ -1,0 +1,162 @@
+---
+description: 
+globs: **/*test.go
+alwaysApply: false
+---
+# Golang Testing Standards
+
+## Context
+- When writing tests for Go code in any file with `*_test.go` extension
+- When implementing test suites, unit tests, or integration tests
+- When measuring and optimizing test coverage
+
+## Requirements
+
+### Test File Structure
+- Name test files with the pattern `*_test.go` to match the file being tested
+- Place test files in the same package as the code being tested
+- Use `testify/suite` for organizing test suites
+- Structure tests to be clear, concise, and focused on specific functionality
+
+### Test Suite Organization
+- Use Testify Suite as the default testing framework
+- Create a suite struct that embeds `testify.Suite`
+- Implement `SetupSuite()`, `TearDownSuite()`, `SetupTest()`, and `TearDownTest()` as needed
+- Run the suite with `suite.Run(t, new(YourTestSuite))`
+
+### Test Functions
+- Name test functions with the pattern `Test<FunctionName>` for unit tests
+- Use descriptive names that indicate what is being tested
+- Implement table-driven tests for functions with multiple input/output scenarios
+- Use `t.Parallel()` for tests that can run concurrently
+- Include both positive and negative test cases
+
+### Assertions
+- Use `assert` for checks that should continue execution after failure
+- Use `require` for checks that should stop execution after failure
+- Prefer specific assertions (e.g., `assert.Equal`, `assert.NoError`) over generic ones
+- Include meaningful error messages in assertions
+
+### Test Coverage
+- Aim for high test coverage (at least 85% as a general guideline)
+- Run tests with coverage using `go test -cover ./...`
+- Generate coverage reports with `go test -coverprofile=coverage.out ./...`
+- Visualize coverage with `go tool cover -html=coverage.out`
+- Use `-coverpkg=./...` to include all packages in coverage calculation
+
+### Real Dependencies vs Mocks
+- Prefer testing with real dependencies over mocks
+- Use test containers or local test environments for external dependencies
+- For unavoidable mocks, use clear and minimal mock implementations
+- Document why a mock is necessary when used
+
+### Test Performance
+- Keep unit tests fast (milliseconds, not seconds)
+- Separate slow integration tests from fast unit tests
+- Use build tags to control which tests run in different environments
+- Consider benchmarks for performance-critical code
+
+### AI-Friendly Practices
+- Include clear test descriptions and comments
+- Structure tests in a consistent, predictable manner
+- Document test setup and teardown logic
+- Use descriptive variable names in test cases
+
+## Examples
+
+<example>
+// UserService_test.go
+package user
+
+import (
+	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"github.com/stretchr/testify/suite"
+)
+
+type UserServiceTestSuite struct {
+	suite.Suite
+	service *UserService
+	db      *Database
+}
+
+func (s *UserServiceTestSuite) SetupSuite() {
+	// Initialize test database
+	s.db = NewTestDatabase()
+}
+
+func (s *UserServiceTestSuite) TearDownSuite() {
+	// Clean up test database
+	s.db.Close()
+}
+
+func (s *UserServiceTestSuite) SetupTest() {
+	// Create a fresh service instance before each test
+	s.service = NewUserService(s.db)
+}
+
+func (s *UserServiceTestSuite) TestCreateUser() {
+	// Test the CreateUser function
+	user, err := s.service.CreateUser("test@example.com", "password123")
+	
+	// Verify no error occurred
+	require.NoError(s.T(), err)
+	
+	// Verify user was created with correct data
+	assert.NotEmpty(s.T(), user.ID)
+	assert.Equal(s.T(), "test@example.com", user.Email)
+	
+	// Verify user exists in database
+	dbUser, err := s.db.GetUserByID(user.ID)
+	require.NoError(s.T(), err)
+	assert.Equal(s.T(), user.Email, dbUser.Email)
+}
+
+func (s *UserServiceTestSuite) TestCreateUser_InvalidEmail() {
+	// Test with invalid email
+	_, err := s.service.CreateUser("invalid-email", "password123")
+	
+	// Verify appropriate error is returned
+	assert.Error(s.T(), err)
+	assert.Contains(s.T(), err.Error(), "invalid email format")
+}
+
+// Run the test suite
+func TestUserServiceSuite(t *testing.T) {
+	suite.Run(t, new(UserServiceTestSuite))
+}
+</example>
+
+<example type="invalid">
+// Bad test example
+package user
+
+import "testing"
+
+func TestCreateUser(t *testing.T) {
+	// No setup or teardown
+	service := NewUserService(nil) // Using nil instead of a real or mock dependency
+	
+	// Only testing the happy path
+	user, _ := service.CreateUser("test@example.com", "password123") // Ignoring error
+	
+	// Manual comparison instead of assertions
+	if user.Email != "test@example.com" {
+		t.Errorf("Expected email to be test@example.com")
+	}
+	
+	// No verification that user was actually persisted
+}
+</example>
+
+## Critical Rules
+- Always use Testify Suite for organizing tests
+- Name test files with the pattern `*_test.go`
+- Test both success and error cases
+- Prefer real dependencies over mocks
+- Run tests with coverage to ensure adequate test coverage
+- Write clear, focused tests that test one thing at a time
+- Include meaningful assertions with descriptive error messages
+- Document complex test setups or non-obvious test strategies 

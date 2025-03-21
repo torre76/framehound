@@ -1,0 +1,105 @@
+---
+description: 
+globs: **/*.go
+alwaysApply: false
+---
+ # Go Package Structure Guidelines
+
+## Context
+- When organizing code in the FrameHound project
+- When creating new packages or adding functionality to existing ones
+- When deciding where to place constants, types, and functions
+
+## Package Overview
+The project is organized into the following main packages:
+
+1. **ffmpeg**: Contains all functionality related to ffmpeg operations
+   - Both public and private methods for video processing
+   - Handles execution and interaction with the ffmpeg binary
+
+2. **mediainfo**: Contains functionality for gathering media information
+   - Extracts and processes metadata from media files
+   - Provides structured access to media properties
+
+3. **graph**: Contains functionality for graph generation
+   - Creates visual representations of media data
+   - Handles rendering and output of graphs
+
+## Package Structure Requirements
+
+### General Package Guidelines
+- Each package should have a clear, single responsibility
+- Package names should be short, lowercase, and descriptive
+- Avoid package name collisions with standard library
+- Don't use underscores in package names
+- Don't use plural forms for package names
+
+### File Organization
+- `const.go`: Each package should contain a dedicated file for constants
+  - All constants (both exported and unexported) should be defined here
+  - Group related constants together
+  - Use proper naming conventions (PascalCase for exported, camelCase for unexported)
+
+- `types.go`: Define custom types and interfaces in a dedicated file
+  - Keep type definitions separate from their implementations
+  - Include method set definitions (interfaces) here
+
+- `<functionality>.go`: Split implementation into logical files
+  - Name files after the primary functionality they implement
+  - Keep files focused on a specific aspect of the package's responsibility
+
+### Visibility Guidelines
+- Exported (public) identifiers:
+  - Use PascalCase (e.g., `MediaInfo`, `ProcessVideo`)
+  - Should have documentation comments
+  - Only export what is necessary for the package's API
+
+- Unexported (private) identifiers:
+  - Use camelCase (e.g., `parseOutput`, `internalHelper`)
+  - Keep implementation details private
+
+### Documentation Requirements
+- Every package should have a package comment in one of its .go files
+- All exported functions, types, and constants must have documentation comments
+- Use complete sentences with proper punctuation
+- Explain the "why" not just the "what"
+
+## Examples
+
+<example>
+// Package ffmpeg provides functionality for video processing using FFmpeg.
+package ffmpeg
+
+// In const.go
+const (
+    // DefaultBitrate is the standard bitrate used for encoding
+    DefaultBitrate = "1M"
+    
+    // internal constants
+    defaultTimeout = 30 * time.Second
+)
+
+// In types.go
+// VideoProcessor handles the processing of video files
+type VideoProcessor struct {
+    // fields
+}
+
+// In process.go
+// ProcessVideo converts a video file to the specified format
+func ProcessVideo(input, output string, options ...Option) error {
+    // implementation
+}
+
+func executeCommand(cmd string, args []string) ([]byte, error) {
+    // internal implementation
+}
+</example>
+
+## Critical Rules
+- Always place constants in the package's `const.go` file
+- Keep each package focused on its specific responsibility
+- Don't create circular dependencies between packages
+- Follow Go's standard visibility rules (capitalized = exported)
+- Document all exported identifiers
+- Use consistent naming conventions throughout the codebase 

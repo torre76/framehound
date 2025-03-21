@@ -1,0 +1,194 @@
+---
+description: 
+globs: **/*.go
+alwaysApply: false
+---
+# Go Standard Output Formatting Guide
+
+## Context
+- Used when writing or editing Go (*.go) files that produce standard output
+- Provides consistent styling and formatting for CLI applications 
+- Ensures readable and accessible output across different environments
+
+## Requirements
+
+### Library Usage
+- Use the [fatih/color](mdc:https:/github.com/fatih/color) library for all standard output formatting
+- Always import the library at the top of your file: `import "github.com/fatih/color"`
+
+### Text Formatting Rules
+- **Summary Lines**: All summary or header lines must be in bold cyan
+  ```go
+  summaryStyle := color.New(color.FgCyan, color.Bold)
+  summaryStyle.Println("Operation completed successfully")
+  ```
+
+- **Important Values**: All important values must be in bold
+  ```go
+  // For field: value pairs, the value should be bold
+  fieldStyle := color.New(color.Reset)
+  valueStyle := color.New(color.Bold)
+  
+  fieldStyle.Print("Username: ")
+  valueStyle.Println("admin")
+  
+  // Alternative approach for inline formatting
+  fmt.Printf("Username: %s\n", color.New(color.Bold).Sprint("admin"))
+  ```
+
+- **Error Messages**: Use red for errors
+  ```go
+  errorStyle := color.New(color.FgRed)
+  errorStyle.Println("Error: unable to connect to server")
+  ```
+
+- **Success Messages**: Use green for success messages
+  ```go
+  successStyle := color.New(color.FgGreen)
+  successStyle.Println("Success: configuration updated")
+  ```
+
+### Consistency and Readability
+- Maintain the same style throughout the application for a cohesive user experience
+- Create style variables at the beginning of your main function or in a dedicated styling package
+- Use meaningful variable names that indicate the purpose of each style
+
+### Output Redirection
+- When output is redirected to a file or non-TTY device, disable colors automatically
+- The fatih/color library handles this by default but can be explicitly controlled:
+  ```go
+  // To explicitly disable colors for file output
+  if isRedirected {
+      color.NoColor = true
+  }
+  ```
+
+### Emoji Usage Guidelines
+- Use emojis strategically to enhance meaning and improve visual scanning ✨
+- Limit to 6-8 different emojis across the application for consistency
+- Place emojis at the beginning of lines, followed by a space
+- Recommended emoji usage patterns:
+  - ✅ Success messages or completed tasks
+  - ❌ Error messages or failures
+  - ℹ️ Informational messages
+  - 🔍 Search results or inspection details
+  - ⚠️ Warning messages
+  - 🔄 Processing or loading operations
+  - 💾 Saving or data operations
+  - 🚀 Performance improvements or deployments
+
+## Emoji Best Practices
+
+### Emoji Selection Principles
+- Choose emojis that clearly relate to the context of the message
+- Ensure the selected emojis have universal meaning across cultures
+- Use emojis to enhance readability by creating visual patterns that make scanning output easier
+- Be consistent with emoji placement (beginning of line recommended)
+
+### When to Use Emojis
+- Use emojis for status indicators, not for decorative purposes
+- Add emojis to highlight important information or state changes
+- Use emojis to create visual separation between different types of output
+- Consider using emojis in log levels (info, warning, error, success)
+
+### When to Avoid Emojis
+- Don't use emojis when output is likely to be processed by scripts or other tools
+- Avoid emojis in technical output that needs to be precise and unambiguous
+- Skip emojis in error stack traces or debug information
+- Don't use multiple emojis for a single message
+
+### Example Emoji Pattern System
+```go
+package main
+
+import (
+    "fmt"
+    "github.com/fatih/color"
+)
+
+func main() {
+    // Define consistent emoji patterns
+    const (
+        emojiInfo     = "ℹ️ "
+        emojiSuccess  = "✅ "
+        emojiError    = "❌ "
+        emojiWarning  = "⚠️ "
+        emojiLoading  = "🔄 "
+        emojiData     = "💾 "
+    )
+    
+    // Define styles
+    header := color.New(color.FgCyan, color.Bold)
+    error := color.New(color.FgRed)
+    success := color.New(color.FgGreen)
+    info := color.New(color.Reset)
+    
+    // Using emojis consistently
+    header.Println("DATABASE OPERATIONS")
+    
+    info.Printf("%sConnecting to database server\n", emojiInfo)
+    success.Printf("%sConnection established\n", emojiSuccess)
+    
+    info.Printf("%sAttempting data retrieval\n", emojiLoading)
+    error.Printf("%sFailed to retrieve user records\n", emojiError)
+    
+    success.Printf("%sData saved to backup file\n", emojiData)
+}
+```
+
+## Examples
+
+### Good Output Example
+```go
+package main
+
+import (
+    "fmt"
+    "github.com/fatih/color"
+)
+
+func main() {
+    // Define styles
+    header := color.New(color.FgCyan, color.Bold)
+    value := color.New(color.Bold)
+    success := color.New(color.FgGreen)
+    
+    // Print header
+    header.Println("USER INFORMATION")
+    
+    // Print field-value pairs
+    fmt.Print("Name: ")
+    value.Println("John Doe")
+    
+    fmt.Print("Role: ")
+    value.Println("Administrator")
+    
+    // Print success message with emoji
+    success.Println("✅ Profile loaded successfully")
+}
+```
+
+### Bad Example
+```go
+// ❌ Inconsistent styling and no use of the required library
+package main
+
+import "fmt"
+
+func main() {
+    fmt.Println("\033[1;36mUSER INFORMATION\033[0m") // Don't use ANSI codes directly
+    fmt.Println("Name: John Doe") // Value not bold
+    fmt.Println("Role: Administrator") // Value not bold
+    fmt.Println("Profile loaded successfully") // No color for success message
+}
+```
+
+## Critical Rules
+- Never mix ANSI color codes directly with the fatih/color library
+- Always check if colors should be disabled (non-TTY output, --no-color flag)
+- Create helper functions for frequently used output patterns
+- Keep styling consistent throughout the application
+- Use bold cyan ONLY for summary/header lines
+- Use bold ONLY for important values that need emphasis
+- When printing to log files, ensure color.NoColor = true 
+- Keep emoji usage purposeful, consistent and limited to 6-8 different emojis 
