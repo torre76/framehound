@@ -1,8 +1,14 @@
 # FrameHound
 
-[![CI](https://github.com/torre76/framehound/actions/workflows/ci.yml/badge.svg)](https://github.com/torre76/framehound/actions/workflows/ci.yml)
-[![codecov](https://codecov.io/gh/torre76/framehound/branch/main/graph/badge.svg)](https://codecov.io/gh/torre76/framehound)
-[![Go Report Card](https://goreportcard.com/badge/github.com/torre76/framehound)](https://goreportcard.com/report/github.com/torre76/framehound)
+<p align="center">
+  <img src="resources/images/framehound.jpg" width="50%" alt="FrameHound">
+</p>
+
+<p align="center">
+  <a href="https://github.com/torre76/framehound/actions/workflows/ci.yml"><img src="https://github.com/torre76/framehound/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="https://codecov.io/gh/torre76/framehound"><img src="https://codecov.io/gh/torre76/framehound/branch/main/graph/badge.svg" alt="codecov"></a>
+  <a href="https://goreportcard.com/report/github.com/torre76/framehound"><img src="https://goreportcard.com/badge/github.com/torre76/framehound" alt="Go Report Card"></a>
+</p>
 
 FrameHound is a tool for analyzing video files, with a focus on frame-level metrics and quality assessment.
 

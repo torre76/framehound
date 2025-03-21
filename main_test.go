@@ -1,7 +1,6 @@
 package main
 
 import (
-	"io"
 	"os"
 	"path/filepath"
 	"testing"
@@ -171,32 +170,6 @@ func (s *MainTestSuite) TestSaveContainerInfo() {
 	assert.Contains(s.T(), contentStr, "1,234,567 bytes")
 	assert.Contains(s.T(), contentStr, "H.264 (High)")
 	assert.Contains(s.T(), contentStr, "FrameHound Version")
-}
-
-// captureOutput captures stdout during the execution of a function
-// and returns the captured output as a string.
-func captureOutput(fn func()) string {
-	// Save original stdout
-	oldStdout := os.Stdout
-
-	// Create a new file for stdout that writes to our buffer
-	newStdout, _ := os.CreateTemp("", "stdout")
-	os.Stdout = newStdout
-
-	// Call the function that produces output
-	fn()
-
-	// Get the output
-	newStdout.Seek(0, 0)
-	output, _ := io.ReadAll(newStdout)
-
-	// Clean up and restore original stdout
-	newStdout.Close()
-	os.Remove(newStdout.Name())
-	os.Stdout = oldStdout
-
-	// Return captured output
-	return string(output)
 }
 
 // TestMainTestSuite runs the test suite.
