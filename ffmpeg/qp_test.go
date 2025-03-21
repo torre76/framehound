@@ -336,5 +336,10 @@ func (s *QPAnalyzerTestSuite) TestDetectCodecType() {
 // TestQPAnalyzerSuite runs the QPAnalyzer test suite.
 // This is the entry point for running all QPAnalyzer tests.
 func TestQPAnalyzerSuite(t *testing.T) {
+	// Skip this test if the TEST_SKIP_QP_ANALYZER environment variable is set
+	if os.Getenv("TEST_SKIP_QP_ANALYZER") != "" {
+		t.Skip("Skipping QPAnalyzer tests because TEST_SKIP_QP_ANALYZER is set")
+	}
+
 	suite.Run(t, new(QPAnalyzerTestSuite))
 }

@@ -21,8 +21,31 @@ jobs:
 
     - name: Install dependencies
       run: go mod download
+      
+    - name: Install FFmpeg with debug support
+      if: github.ref == 'refs/heads/main' || github.event_name == 'pull_request'
+      run: |
+        sudo apt-get update -y
+        sudo apt-get install -y build-essential yasm libx264-dev libx265-dev
+        
+        # Clone FFmpeg from source
+        git clone --depth 1 https://git.ffmpeg.org/ffmpeg.git ffmpeg_source
+        cd ffmpeg_source
+        
+        # Configure with debug and x265 support
+        ./configure --enable-debug=3 --disable-stripping --enable-libx264 --enable-libx265 --enable-gpl
+        
+        # Build and install
+        make -j$(nproc)
+        sudo make install
+        sudo ldconfig
+        
+        # Verify installation
+        ffmpeg -version
 
     - name: Run unit tests with coverage
+      env:
+        TEST_SKIP_QP_ANALYZER: ${{ github.ref != 'refs/heads/main' && github.event_name != 'pull_request' }}
       run: go test -v -race -coverprofile=coverage.txt -covermode=atomic ./...
 
     - name: Upload coverage to Codecov
