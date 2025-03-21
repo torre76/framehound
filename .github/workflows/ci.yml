@@ -44,8 +44,6 @@ jobs:
         ffmpeg -version
 
     - name: Run unit tests with coverage
-      env:
-        TEST_SKIP_QP_ANALYZER: ${{ github.ref != 'refs/heads/main' && github.event_name != 'pull_request' }}
       run: go test -v -race -coverprofile=coverage.txt -covermode=atomic ./...
 
     - name: Upload coverage to Codecov

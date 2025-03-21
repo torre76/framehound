@@ -65,7 +65,6 @@ alwaysApply: false
 
 ### Emoji Usage Guidelines
 - Use emojis strategically to enhance meaning and improve visual scanning ✨
-- Limit to 6-8 different emojis across the application for consistency
 - Place emojis at the beginning of lines, followed by a space
 - Recommended emoji usage patterns:
   - ✅ Success messages or completed tasks
