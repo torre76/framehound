@@ -33,12 +33,12 @@ issues:
         - dupl
         - gosec
         - unparam
-
-run:
-  timeout: 5m
-  skip-dirs-use-default: false
-  skip-dirs:
+  exclude-dirs:
     - reports
     - custom_reports
     - short_flag_reports
     - resources
+  exclude-dirs-use-default: false
+
+run:
+  timeout: 5m

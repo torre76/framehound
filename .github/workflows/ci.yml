@@ -94,19 +94,19 @@ jobs:
         go-version-input: '1.24'
         check-latest: true
 
-    - name: Generate dependency graph with deps.dev
-      uses: actions/setup-node@v4
-      with:
-        node-version: '20'
+    - name: Install dependency visualization tool (goda)
+      run: go install github.com/loov/goda@latest
 
-    - name: Install deps.dev tool
-      run: npm install -g @depsdev/scanner
+    - name: Generate dependency graph
+      run: |
+        mkdir -p reports
+        goda graph -short github.com/torre76/framehound/... > reports/deps-graph.txt
+        goda graph -short -cluster github.com/torre76/framehound/... > reports/deps-graph-clustered.txt
+        echo "Dependency statistics:" > reports/deps-stats.txt
+        goda count github.com/torre76/framehound/... >> reports/deps-stats.txt
 
-    - name: Scan dependencies
-      run: depsdev-scanner scan go-mod --input go.mod --output deps-report.json
-
-    - name: Upload dependency report
+    - name: Upload dependency reports
       uses: actions/upload-artifact@v4
       with:
-        name: dependency-report
-        path: deps-report.json 
+        name: dependency-reports
+        path: reports/deps-* 
