@@ -339,7 +339,7 @@ func saveContainerInfo(info *ffmpeg.ContainerInfo, outputDir string) error {
 	output += fmt.Sprintf("🛠️ Build Date: %s\n", BuildDate)
 
 	// Write the output to the file
-	if err := os.WriteFile(outputFile, []byte(output), 0644); err != nil {
+	if err := os.WriteFile(outputFile, []byte(output), 0600); err != nil {
 		return fmt.Errorf("error writing file: %v", err)
 	}
 

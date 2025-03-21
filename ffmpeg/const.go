@@ -4,13 +4,14 @@
 package ffmpeg
 
 // Private constants (alphabetical)
-const (
-	// defaultTimeout is the standard timeout for FFmpeg operations.
-	defaultTimeout = 30 // seconds
-
-	// errorPrefix is used for formatting error messages.
-	errorPrefix = "ffmpeg: "
-)
+// Commented out unused constants:
+// const (
+//     // defaultTimeout is the standard timeout for FFmpeg operations.
+//     defaultTimeout = 30 // seconds
+//
+//     // errorPrefix is used for formatting error messages.
+//     errorPrefix = "ffmpeg: "
+// )
 
 // Public constants (alphabetical)
 const (

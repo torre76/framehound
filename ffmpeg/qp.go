@@ -419,7 +419,7 @@ func (qa *QPAnalyzer) AnalyzeQP(ctx context.Context, filePath string, resultCh c
 		// Context was canceled
 		processErr = ctx.Err()
 		// Kill the FFmpeg process
-		cmd.Process.Kill()
+		_ = cmd.Process.Kill()
 	}
 
 	// Wait for command to finish

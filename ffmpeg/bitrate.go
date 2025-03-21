@@ -133,7 +133,7 @@ func (b *BitrateAnalyzer) Analyze(ctx context.Context, filePath string, resultCh
 		}
 
 		// Wait for the command to finish
-		cmd.Wait()
+		_ = cmd.Wait()
 	}()
 
 	return nil

@@ -100,10 +100,14 @@ jobs:
     - name: Generate dependency graph
       run: |
         mkdir -p reports
-        goda graph -short github.com/torre76/framehound/... > reports/deps-graph.txt
-        goda graph -short -cluster github.com/torre76/framehound/... > reports/deps-graph-clustered.txt
-        echo "Dependency statistics:" > reports/deps-stats.txt
-        goda count github.com/torre76/framehound/... >> reports/deps-stats.txt
+        # Generate standard dependency graph
+        goda graph "github.com/torre76/framehound/..." > reports/deps-graph.txt
+        # Generate clustered dependency graph
+        goda graph -cluster -short "github.com/torre76/framehound/..." > reports/deps-graph-clustered.txt
+        # Generate dependency statistics
+        goda count "github.com/torre76/framehound/..." > reports/deps-stats.txt
+        # Generate dependency tree
+        goda tree "github.com/torre76/framehound/..." > reports/deps-tree.txt
 
     - name: Upload dependency reports
       uses: actions/upload-artifact@v4

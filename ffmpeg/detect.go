@@ -25,7 +25,7 @@ func checkCUReadingSupport(ffmpegPath string, versionOutput string) bool {
 	}
 
 	// Method 2: Check for ffmpeg_g executable (debug build)
-	ffmpegGPath := ffmpegPath
+	var ffmpegGPath string
 	if strings.HasSuffix(ffmpegPath, ".exe") {
 		ffmpegGPath = strings.TrimSuffix(ffmpegPath, ".exe") + "_g.exe"
 	} else {
@@ -76,7 +76,7 @@ func checkCUReadingSupport(ffmpegPath string, versionOutput string) bool {
 	stderrOutput := string(stderrBytes[:n])
 
 	// Wait for the command to finish
-	cmd.Wait()
+	_ = cmd.Wait()
 
 	// Check if the command was successful and if the debug parameter was accepted
 	// If the parameter is not supported, FFmpeg will output an error message
@@ -96,7 +96,7 @@ func checkQPReadingSupport(ffmpegPath string, versionOutput string) bool {
 	}
 
 	// Method 2: Check for ffmpeg_g executable (debug build)
-	ffmpegGPath := ffmpegPath
+	var ffmpegGPath string
 	if strings.HasSuffix(ffmpegPath, ".exe") {
 		ffmpegGPath = strings.TrimSuffix(ffmpegPath, ".exe") + "_g.exe"
 	} else {
@@ -147,7 +147,7 @@ func checkQPReadingSupport(ffmpegPath string, versionOutput string) bool {
 	stderrOutput := string(stderrBytes[:n])
 
 	// Wait for the command to finish
-	cmd.Wait()
+	_ = cmd.Wait()
 
 	// Check if the command was successful and if the debug parameter was accepted
 	// If the parameter is not supported, FFmpeg will output an error message
