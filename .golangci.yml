@@ -36,8 +36,9 @@ issues:
 
 run:
   timeout: 5m
+  skip-dirs-use-default: false
   skip-dirs:
     - reports
     - custom_reports
     - short_flag_reports
-    - resources 
+    - resources
