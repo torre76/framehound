@@ -341,32 +341,56 @@ func (qa *QPAnalyzer) parseQPString(str string) []int {
 		return []int{24, 26, 27}
 	}
 
-	// If there are no spaces or commas but it's a long string of digits,
-	// it might be consecutive QP values that need to be split (e.g., "242627" -> 24, 26, 27)
-	if len(str) > 2 && !strings.Contains(str, " ") && !strings.Contains(str, ",") {
-		// Check if it's purely numerical
-		_, err := strconv.Atoi(str)
-		if err == nil {
-			// Parse as consecutive two-digit QP values
-			result := make([]int, 0, len(str)/2)
-			for i := 0; i < len(str); i += 2 {
-				if i+2 <= len(str) {
-					val, err := strconv.Atoi(str[i : i+2])
-					if err == nil {
-						result = append(result, val)
-					}
-				} else if i+1 <= len(str) {
-					// Handle odd length strings by parsing the last digit
-					val, err := strconv.Atoi(str[i : i+1])
-					if err == nil {
-						result = append(result, val)
-					}
-				}
+	// Check if we need to handle consecutive digits format
+	if qa.isConsecutiveDigitsFormat(str) {
+		return qa.parseConsecutiveDigits(str)
+	}
+
+	// Regular parsing using spaces or commas
+	return qa.parseRegularFormat(str)
+}
+
+// isConsecutiveDigitsFormat determines if the string contains consecutive digits
+// that need to be parsed as individual QP values.
+func (qa *QPAnalyzer) isConsecutiveDigitsFormat(str string) bool {
+	if len(str) <= 2 {
+		return false
+	}
+
+	if strings.Contains(str, " ") || strings.Contains(str, ",") {
+		return false
+	}
+
+	// Check if it's purely numerical
+	_, err := strconv.Atoi(str)
+	return err == nil
+}
+
+// parseConsecutiveDigits handles strings of consecutive digits (e.g., "242627").
+// It splits them into two-digit QP values, handling odd-length strings if needed.
+func (qa *QPAnalyzer) parseConsecutiveDigits(str string) []int {
+	result := make([]int, 0, len(str)/2)
+
+	for i := 0; i < len(str); i += 2 {
+		if i+2 <= len(str) {
+			val, err := strconv.Atoi(str[i : i+2])
+			if err == nil {
+				result = append(result, val)
 			}
-			return result
+		} else if i+1 <= len(str) {
+			// Handle odd length strings by parsing the last digit
+			val, err := strconv.Atoi(str[i : i+1])
+			if err == nil {
+				result = append(result, val)
+			}
 		}
 	}
 
+	return result
+}
+
+// parseRegularFormat handles strings separated by spaces or commas.
+func (qa *QPAnalyzer) parseRegularFormat(str string) []int {
 	// Split by spaces or commas
 	var parts []string
 	if strings.Contains(str, ",") {
@@ -375,21 +399,16 @@ func (qa *QPAnalyzer) parseQPString(str string) []int {
 		parts = strings.Fields(str)
 	}
 
-	// Convert to integers
-	var result []int
+	// Convert parts to integers
+	result := make([]int, 0, len(parts))
+
 	for _, part := range parts {
 		part = strings.TrimSpace(part)
 		if part == "" {
 			continue
 		}
 
-		// Handle special formats like "QP=23"
-		if strings.Contains(part, "=") {
-			kv := strings.Split(part, "=")
-			if len(kv) >= 2 {
-				part = kv[1]
-			}
-		}
+		part = qa.extractValueFromKeyValue(part)
 
 		// Try to convert to integer
 		val, err := strconv.Atoi(part)
@@ -399,6 +418,18 @@ func (qa *QPAnalyzer) parseQPString(str string) []int {
 	}
 
 	return result
+}
+
+// extractValueFromKeyValue extracts the value from a "key=value" format.
+func (qa *QPAnalyzer) extractValueFromKeyValue(part string) string {
+	// Handle special formats like "QP=23"
+	if strings.Contains(part, "=") {
+		kv := strings.Split(part, "=")
+		if len(kv) >= 2 {
+			return kv[1]
+		}
+	}
+	return part
 }
 
 // isCompatibleCodec determines if a codec is supported for QP analysis.

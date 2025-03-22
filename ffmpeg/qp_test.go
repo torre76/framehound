@@ -53,25 +53,38 @@ func (s *QPAnalyzerTestSuite) SetupSuite() {
 func (s *QPAnalyzerTestSuite) TestAnalyzeQP() {
 	// Check if the test file is available
 	testFile := "../resources/test/sample.mkv"
+	if !s.isTestFileAvailable(testFile) {
+		s.runMockTest()
+		return
+	}
+
+	s.runActualTest(testFile)
+}
+
+// isTestFileAvailable checks if the specified test file exists.
+func (s *QPAnalyzerTestSuite) isTestFileAvailable(testFile string) bool {
 	fileExists := true
 	if _, err := exec.LookPath("ls"); err == nil {
 		if _, err := os.Stat(testFile); os.IsNotExist(err) {
 			fileExists = false
 		}
 	}
+	return fileExists
+}
 
-	// If test file doesn't exist, run a mock test instead of skipping
-	if !fileExists {
-		// Create a controlled error case - no file provided
-		resultCh := make(chan FrameQP, 10)
-		ctx := context.Background()
+// runMockTest runs a simplified test when the test file is not available.
+func (s *QPAnalyzerTestSuite) runMockTest() {
+	// Create a controlled error case - no file provided
+	resultCh := make(chan FrameQP, 10)
+	ctx := context.Background()
 
-		err := s.analyzer.AnalyzeQP(ctx, "", resultCh)
-		s.Error(err, "Should return error when no file is provided")
-		s.T().Log("Running with mock test since test file is not available")
-		return
-	}
+	err := s.analyzer.AnalyzeQP(ctx, "", resultCh)
+	s.Error(err, "Should return error when no file is provided")
+	s.T().Log("Running with mock test since test file is not available")
+}
 
+// runActualTest runs the full test with an actual video file.
+func (s *QPAnalyzerTestSuite) runActualTest(testFile string) {
 	// Setup context with timeout (reduced to prevent hangs)
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -85,7 +98,11 @@ func (s *QPAnalyzerTestSuite) TestAnalyzeQP() {
 		analysisDone <- s.analyzer.AnalyzeQP(ctx, testFile, resultCh)
 	}()
 
-	// Process frames
+	s.processTestResults(ctx, resultCh, analysisDone, cancel)
+}
+
+// processTestResults handles the frame processing and result validation.
+func (s *QPAnalyzerTestSuite) processTestResults(ctx context.Context, resultCh chan FrameQP, analysisDone chan error, cancel context.CancelFunc) {
 	frameCount := 0
 	maxFrames := 10 // Limit to 10 frames for faster tests
 
@@ -93,17 +110,7 @@ func (s *QPAnalyzerTestSuite) TestAnalyzeQP() {
 	for {
 		select {
 		case err := <-analysisDone:
-			// Analysis finished
-			if err != nil && !strings.Contains(err.Error(), "context deadline exceeded") && err != context.Canceled {
-				s.T().Logf("Analysis error: %v", err)
-			}
-
-			// If we've processed at least some frames, consider the test successful
-			if frameCount > 0 {
-				s.T().Logf("Analysis completed. Processed %d frames", frameCount)
-			} else {
-				s.T().Log("Analysis completed but no frames were processed")
-			}
+			s.handleAnalysisDone(err, frameCount)
 			return
 
 		case frame, ok := <-resultCh:
@@ -113,18 +120,7 @@ func (s *QPAnalyzerTestSuite) TestAnalyzeQP() {
 			}
 
 			frameCount++
-
-			// Basic validation of frame data (if needed)
-			if frame.FrameNumber <= 0 || frame.FrameType == "" || frame.CodecType == "" {
-				s.T().Logf("Warning: Frame %d has potentially invalid data", frameCount)
-			}
-
-			// Conditionally log frame info
-			if frameCount <= 3 || frameCount%10 == 0 {
-				s.T().Logf("Frame %d: Type=%s, Codec=%s, QP Count=%d, Avg QP=%.2f",
-					frame.FrameNumber, frame.FrameType, frame.CodecType,
-					len(frame.QPValues), frame.AverageQP)
-			}
+			s.validateAndLogFrame(frame, frameCount)
 
 			// Stop after processing maxFrames
 			if frameCount >= maxFrames {
@@ -134,14 +130,49 @@ func (s *QPAnalyzerTestSuite) TestAnalyzeQP() {
 			}
 
 		case <-ctx.Done():
-			// Context timeout or cancellation
-			if frameCount > 0 {
-				s.T().Logf("Context finished after processing %d frames, but test is considered successful", frameCount)
-			} else {
-				s.T().Log("Context finished but no frames were processed")
-			}
+			s.handleContextDone(frameCount)
 			return
 		}
+	}
+}
+
+// handleAnalysisDone processes the completion of the analysis.
+func (s *QPAnalyzerTestSuite) handleAnalysisDone(err error, frameCount int) {
+	// Analysis finished
+	if err != nil && !strings.Contains(err.Error(), "context deadline exceeded") && err != context.Canceled {
+		s.T().Logf("Analysis error: %v", err)
+	}
+
+	// If we've processed at least some frames, consider the test successful
+	if frameCount > 0 {
+		s.T().Logf("Analysis completed. Processed %d frames", frameCount)
+	} else {
+		s.T().Log("Analysis completed but no frames were processed")
+	}
+}
+
+// validateAndLogFrame validates a frame's data and conditionally logs frame information.
+func (s *QPAnalyzerTestSuite) validateAndLogFrame(frame FrameQP, frameCount int) {
+	// Basic validation of frame data
+	if frame.FrameNumber <= 0 || frame.FrameType == "" || frame.CodecType == "" {
+		s.T().Logf("Warning: Frame %d has potentially invalid data", frameCount)
+	}
+
+	// Conditionally log frame info
+	if frameCount <= 3 || frameCount%10 == 0 {
+		s.T().Logf("Frame %d: Type=%s, Codec=%s, QP Count=%d, Avg QP=%.2f",
+			frame.FrameNumber, frame.FrameType, frame.CodecType,
+			len(frame.QPValues), frame.AverageQP)
+	}
+}
+
+// handleContextDone handles the case when the context is done (timeout or cancellation).
+func (s *QPAnalyzerTestSuite) handleContextDone(frameCount int) {
+	// Context timeout or cancellation
+	if frameCount > 0 {
+		s.T().Logf("Context finished after processing %d frames, but test is considered successful", frameCount)
+	} else {
+		s.T().Log("Context finished but no frames were processed")
 	}
 }
 

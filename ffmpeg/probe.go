@@ -257,6 +257,26 @@ func (p *Prober) GetExtendedContainerInfo(filePath string) (*ContainerInfo, erro
 		return nil, fmt.Errorf("ffprobe not available")
 	}
 
+	// Get the ffprobe output
+	probeOutput, err := p.runFFprobeCommand(filePath)
+	if err != nil {
+		return nil, err
+	}
+
+	// Create and initialize the container info
+	containerInfo := p.initializeContainerInfo(probeOutput, filePath)
+
+	// Process streams
+	p.processStreams(probeOutput.Streams, containerInfo)
+
+	// Process chapters
+	p.processChapters(probeOutput.Chapters, containerInfo)
+
+	return containerInfo, nil
+}
+
+// runFFprobeCommand executes the ffprobe command and returns the parsed output.
+func (p *Prober) runFFprobeCommand(filePath string) (*ffprobeOutput, error) {
 	// Get the path to ffprobe (replace ffmpeg with ffprobe in the path)
 	ffprobePath := strings.Replace(p.FFmpegInfo.Path, "ffmpeg", "ffprobe", 1)
 
@@ -284,6 +304,11 @@ func (p *Prober) GetExtendedContainerInfo(filePath string) (*ContainerInfo, erro
 		return nil, fmt.Errorf("error parsing ffprobe JSON output: %w", err)
 	}
 
+	return &probeOutput, nil
+}
+
+// initializeContainerInfo creates and initializes a ContainerInfo from ffprobe output.
+func (p *Prober) initializeContainerInfo(probeOutput *ffprobeOutput, filePath string) *ContainerInfo {
 	// Create the container info structure
 	containerInfo := &ContainerInfo{
 		General: GeneralInfo{
@@ -319,259 +344,282 @@ func (p *Prober) GetExtendedContainerInfo(filePath string) (*ContainerInfo, erro
 		}
 	}
 
-	// Process streams
-	for _, stream := range probeOutput.Streams {
-		// Common attributes for stream types
-		disposition := map[string]bool{}
-		if stream.DispositionObj != nil {
-			for k, v := range stream.DispositionObj {
-				disposition[k] = v != 0
-			}
-		}
+	return containerInfo
+}
 
-		// Get title and language from stream tags
-		title := ""
-		language := ""
-		if stream.Tags != nil {
-			if t, ok := stream.Tags["title"]; ok {
-				title = removeUnicodeZeroWidthChars(t)
-			}
-			if l, ok := stream.Tags["language"]; ok {
-				language = l
-			}
-		}
+// processStreams handles all streams from the ffprobe output.
+func (p *Prober) processStreams(streams []ffprobeStreamOutput, containerInfo *ContainerInfo) {
+	for _, stream := range streams {
+		// Extract common stream information
+		streamInfo := p.extractCommonStreamInfo(stream)
 
+		// Process the stream based on its type
 		switch stream.CodecType {
 		case "video":
-			// Parse bitrate
-			bitRate := int64(0)
-			if stream.BitRate != "" {
-				if br, err := strconv.ParseInt(stream.BitRate, 10, 64); err == nil {
-					bitRate = br
-				}
-			}
-
-			// Parse frame rate
-			frameRate := 0.0
-			if stream.FrameRate != "" {
-				parts := strings.Split(stream.FrameRate, "/")
-				if len(parts) == 2 {
-					num, errNum := strconv.ParseFloat(parts[0], 64)
-					den, errDen := strconv.ParseFloat(parts[1], 64)
-					if errNum == nil && errDen == nil && den > 0 {
-						frameRate = num / den
-					}
-				}
-			}
-
-			// Parse display aspect ratio
-			displayAspectRatio := 0.0
-			if stream.DisplayAspectRatio != "" {
-				parts := strings.Split(stream.DisplayAspectRatio, ":")
-				if len(parts) == 2 {
-					num, errNum := strconv.ParseFloat(parts[0], 64)
-					den, errDen := strconv.ParseFloat(parts[1], 64)
-					if errNum == nil && errDen == nil && den > 0 {
-						displayAspectRatio = num / den
-					}
-				}
-			}
-
-			// Parse pixel aspect ratio
-			pixelAspectRatio := 0.0
-			if stream.SampleAspectRatio != "" {
-				parts := strings.Split(stream.SampleAspectRatio, ":")
-				if len(parts) == 2 {
-					num, errNum := strconv.ParseFloat(parts[0], 64)
-					den, errDen := strconv.ParseFloat(parts[1], 64)
-					if errNum == nil && errDen == nil && den > 0 {
-						pixelAspectRatio = num / den
-					}
-				}
-			}
-
-			// Parse bit depth
-			bitDepth := 8
-			if stream.BitsPerRawSample != "" {
-				if bd, err := strconv.Atoi(stream.BitsPerRawSample); err == nil {
-					bitDepth = bd
-				}
-			}
-
-			// Parse duration
-			duration := 0.0
-			if stream.Duration != "" {
-				if d, err := strconv.ParseFloat(stream.Duration, 64); err == nil {
-					duration = d
-				}
-			}
-
-			// Create video stream object
-			videoStream := VideoStream{
-				Index:              stream.Index,
-				Format:             stream.CodecName,
-				FormatFull:         stream.CodecLongName,
-				FormatProfile:      stream.Profile,
-				Width:              stream.Width,
-				Height:             stream.Height,
-				DisplayAspectRatio: displayAspectRatio,
-				PixelAspectRatio:   pixelAspectRatio,
-				FrameRate:          frameRate,
-				FrameRateMode:      "Unknown", // Not directly available from FFprobe
-				BitRate:            bitRate,
-				BitDepth:           bitDepth,
-				Duration:           duration,
-				ColorSpace:         stream.ColorSpace,
-				ScanType:           stream.FieldOrder,
-				HasBFrames:         stream.HasBFrames > 0,
-				Language:           language,
-				Title:              title,
-			}
-
-			// Add to container info
+			videoStream := p.processVideoStream(stream, streamInfo)
 			containerInfo.VideoStreams = append(containerInfo.VideoStreams, videoStream)
 
 		case "audio":
-			// Parse bitrate
-			bitRate := int64(0)
-			if stream.BitRate != "" {
-				if br, err := strconv.ParseInt(stream.BitRate, 10, 64); err == nil {
-					bitRate = br
-				}
-			}
-
-			// Parse sampling rate
-			samplingRate := 0
-			if stream.SampleRate != "" {
-				if sr, err := strconv.Atoi(stream.SampleRate); err == nil {
-					samplingRate = sr
-				}
-			}
-
-			// Parse duration
-			duration := 0.0
-			if stream.Duration != "" {
-				if d, err := strconv.ParseFloat(stream.Duration, 64); err == nil {
-					duration = d
-				}
-			}
-
-			// Create audio stream object
-			audioStream := AudioStream{
-				Index:         stream.Index,
-				Format:        stream.CodecName,
-				FormatFull:    stream.CodecLongName,
-				Channels:      stream.Channels,
-				ChannelLayout: stream.ChannelLayout,
-				SamplingRate:  samplingRate,
-				BitRate:       bitRate,
-				Duration:      duration,
-				Language:      language,
-				Title:         title,
-			}
-
-			// Add to container info
+			audioStream := p.processAudioStream(stream, streamInfo)
 			containerInfo.AudioStreams = append(containerInfo.AudioStreams, audioStream)
 
 		case "subtitle":
-			// Create subtitle stream object
-			subtitleStream := SubtitleStream{
-				Index:      stream.Index,
-				Format:     stream.CodecName,
-				FormatFull: stream.CodecLongName,
-				Language:   language,
-				Title:      title,
-			}
-
-			// Add to container info
+			subtitleStream := p.processSubtitleStream(stream, streamInfo)
 			containerInfo.SubtitleStreams = append(containerInfo.SubtitleStreams, subtitleStream)
 
 		case "attachment":
-			// Get filename from tags
-			fileName := ""
-			mimeType := ""
-			if stream.Tags != nil {
-				if fn, ok := stream.Tags["filename"]; ok {
-					fileName = fn
-				}
-				if mt, ok := stream.Tags["mimetype"]; ok {
-					mimeType = mt
-				}
-			}
-
-			// Create attachment stream object
-			attachmentStream := AttachmentStream{
-				Index:    stream.Index,
-				FileName: fileName,
-				MimeType: mimeType,
-			}
-
-			// Add to container info
+			attachmentStream := p.processAttachmentStream(stream)
 			containerInfo.AttachmentStreams = append(containerInfo.AttachmentStreams, attachmentStream)
 
 		case "data":
-			// Create data stream object
-			dataStream := DataStream{
-				Index:      stream.Index,
-				Format:     stream.CodecName,
-				FormatFull: stream.CodecLongName,
-				Title:      title,
-			}
-
-			// Add to container info
+			dataStream := p.processDataStream(stream, streamInfo)
 			containerInfo.DataStreams = append(containerInfo.DataStreams, dataStream)
 
 		default:
-			// Create other stream object for unknown types
-			otherStream := OtherStream{
-				Index:      stream.Index,
-				Type:       stream.CodecType,
-				Format:     stream.CodecName,
-				FormatFull: stream.CodecLongName,
-			}
-
-			// Add to container info
+			otherStream := p.processOtherStream(stream, streamInfo)
 			containerInfo.OtherStreams = append(containerInfo.OtherStreams, otherStream)
 		}
 	}
+}
 
-	// Process chapters
-	for _, chapter := range probeOutput.Chapters {
-		// Parse start and end times
-		startTime := 0.0
-		endTime := 0.0
-		if chapter.StartTime != "" {
-			if st, err := strconv.ParseFloat(chapter.StartTime, 64); err == nil {
-				startTime = st
-			}
-		}
-		if chapter.EndTime != "" {
-			if et, err := strconv.ParseFloat(chapter.EndTime, 64); err == nil {
-				endTime = et
-			}
-		}
-
-		// Get title from tags
-		title := ""
-		if chapter.Tags != nil {
-			if t, ok := chapter.Tags["title"]; ok {
-				title = t
-			}
-		}
-
-		// Create chapter stream object
-		chapterStream := ChapterStream{
-			ID:        chapter.ID,
-			StartTime: startTime,
-			EndTime:   endTime,
-			Title:     title,
-		}
-
-		// Add to container info
-		containerInfo.ChapterStreams = append(containerInfo.ChapterStreams, chapterStream)
+// extractCommonStreamInfo extracts common information from a stream.
+func (p *Prober) extractCommonStreamInfo(stream ffprobeStreamOutput) StreamInfo {
+	// Initialize common stream info
+	info := StreamInfo{
+		Index:      stream.Index,
+		Format:     stream.CodecName,
+		FormatFull: stream.CodecLongName,
 	}
 
-	return containerInfo, nil
+	// Get title and language from stream tags
+	if stream.Tags != nil {
+		if t, ok := stream.Tags["title"]; ok {
+			info.Title = removeUnicodeZeroWidthChars(t)
+		}
+		if l, ok := stream.Tags["language"]; ok {
+			info.Language = l
+		}
+	}
+
+	return info
+}
+
+// StreamInfo holds common information for different stream types.
+type StreamInfo struct {
+	Index      int
+	Format     string
+	FormatFull string
+	Title      string
+	Language   string
+}
+
+// processVideoStream converts ffprobe data to a VideoStream.
+func (p *Prober) processVideoStream(stream ffprobeStreamOutput, info StreamInfo) VideoStream {
+	// Parse bitrate
+	bitRate := p.parseIntField(stream.BitRate)
+
+	// Parse frame rate
+	frameRate := p.parseRational(stream.FrameRate)
+
+	// Parse display aspect ratio
+	displayAspectRatio := p.parseRational(stream.DisplayAspectRatio)
+
+	// Parse pixel aspect ratio
+	pixelAspectRatio := p.parseRational(stream.SampleAspectRatio)
+
+	// Parse bit depth
+	bitDepth := 8
+	if stream.BitsPerRawSample != "" {
+		if bd, err := strconv.Atoi(stream.BitsPerRawSample); err == nil {
+			bitDepth = bd
+		}
+	}
+
+	// Parse duration
+	duration := p.parseFloatField(stream.Duration)
+
+	// Create video stream object
+	return VideoStream{
+		Index:              info.Index,
+		Format:             info.Format,
+		FormatFull:         info.FormatFull,
+		FormatProfile:      stream.Profile,
+		Width:              stream.Width,
+		Height:             stream.Height,
+		DisplayAspectRatio: displayAspectRatio,
+		PixelAspectRatio:   pixelAspectRatio,
+		FrameRate:          frameRate,
+		FrameRateMode:      "Unknown", // Not directly available from FFprobe
+		BitRate:            bitRate,
+		BitDepth:           bitDepth,
+		Duration:           duration,
+		ColorSpace:         stream.ColorSpace,
+		ScanType:           stream.FieldOrder,
+		HasBFrames:         stream.HasBFrames > 0,
+		Language:           info.Language,
+		Title:              info.Title,
+	}
+}
+
+// processAudioStream converts ffprobe data to an AudioStream.
+func (p *Prober) processAudioStream(stream ffprobeStreamOutput, info StreamInfo) AudioStream {
+	// Parse bitrate
+	bitRate := p.parseIntField(stream.BitRate)
+
+	// Parse sampling rate
+	samplingRate := 0
+	if stream.SampleRate != "" {
+		if sr, err := strconv.Atoi(stream.SampleRate); err == nil {
+			samplingRate = sr
+		}
+	}
+
+	// Parse duration
+	duration := p.parseFloatField(stream.Duration)
+
+	// Create audio stream object
+	return AudioStream{
+		Index:         info.Index,
+		Format:        info.Format,
+		FormatFull:    info.FormatFull,
+		Channels:      stream.Channels,
+		ChannelLayout: stream.ChannelLayout,
+		SamplingRate:  samplingRate,
+		BitRate:       bitRate,
+		Duration:      duration,
+		Language:      info.Language,
+		Title:         info.Title,
+	}
+}
+
+// processSubtitleStream converts ffprobe data to a SubtitleStream.
+func (p *Prober) processSubtitleStream(stream ffprobeStreamOutput, info StreamInfo) SubtitleStream {
+	return SubtitleStream{
+		Index:      info.Index,
+		Format:     info.Format,
+		FormatFull: info.FormatFull,
+		Language:   info.Language,
+		Title:      info.Title,
+	}
+}
+
+// processAttachmentStream converts ffprobe data to an AttachmentStream.
+func (p *Prober) processAttachmentStream(stream ffprobeStreamOutput) AttachmentStream {
+	// Get filename from tags
+	fileName := ""
+	mimeType := ""
+	if stream.Tags != nil {
+		if fn, ok := stream.Tags["filename"]; ok {
+			fileName = fn
+		}
+		if mt, ok := stream.Tags["mimetype"]; ok {
+			mimeType = mt
+		}
+	}
+
+	return AttachmentStream{
+		Index:    stream.Index,
+		FileName: fileName,
+		MimeType: mimeType,
+	}
+}
+
+// processDataStream converts ffprobe data to a DataStream.
+func (p *Prober) processDataStream(stream ffprobeStreamOutput, info StreamInfo) DataStream {
+	return DataStream{
+		Index:      info.Index,
+		Format:     info.Format,
+		FormatFull: info.FormatFull,
+		Title:      info.Title,
+	}
+}
+
+// processOtherStream converts ffprobe data to an OtherStream.
+func (p *Prober) processOtherStream(stream ffprobeStreamOutput, info StreamInfo) OtherStream {
+	return OtherStream{
+		Index:      info.Index,
+		Type:       stream.CodecType,
+		Format:     info.Format,
+		FormatFull: info.FormatFull,
+	}
+}
+
+// processChapters handles all chapters from the ffprobe output.
+func (p *Prober) processChapters(chapters []chapterOutput, containerInfo *ContainerInfo) {
+	for _, chapter := range chapters {
+		chapterStream := p.processChapter(chapter)
+		containerInfo.ChapterStreams = append(containerInfo.ChapterStreams, chapterStream)
+	}
+}
+
+// processChapter converts ffprobe data to a ChapterStream.
+func (p *Prober) processChapter(chapter chapterOutput) ChapterStream {
+	// Parse start and end times
+	startTime := p.parseFloatField(chapter.StartTime)
+	endTime := p.parseFloatField(chapter.EndTime)
+
+	// Get title from tags
+	title := ""
+	if chapter.Tags != nil {
+		if t, ok := chapter.Tags["title"]; ok {
+			title = t
+		}
+	}
+
+	return ChapterStream{
+		ID:        chapter.ID,
+		StartTime: startTime,
+		EndTime:   endTime,
+		Title:     title,
+	}
+}
+
+// parseIntField converts a string field to an int64.
+func (p *Prober) parseIntField(value string) int64 {
+	if value == "" {
+		return 0
+	}
+
+	result, err := strconv.ParseInt(value, 10, 64)
+	if err != nil {
+		return 0
+	}
+
+	return result
+}
+
+// parseFloatField converts a string field to a float64.
+func (p *Prober) parseFloatField(value string) float64 {
+	if value == "" {
+		return 0
+	}
+
+	result, err := strconv.ParseFloat(value, 64)
+	if err != nil {
+		return 0
+	}
+
+	return result
+}
+
+// parseRational converts a string in format "num/den" to a float64.
+func (p *Prober) parseRational(value string) float64 {
+	if value == "" {
+		return 0
+	}
+
+	parts := strings.Split(value, "/")
+	if len(parts) != 2 {
+		return 0
+	}
+
+	num, errNum := strconv.ParseFloat(parts[0], 64)
+	den, errDen := strconv.ParseFloat(parts[1], 64)
+	if errNum != nil || errDen != nil || den == 0 {
+		return 0
+	}
+
+	return num / den
 }
 
 // NewProber creates a new Prober instance configured with the provided FFmpeg information.

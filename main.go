@@ -85,10 +85,26 @@ func formatWithThousandSeparators(n int64) string {
 // It displays general information, video streams, audio streams, and subtitle streams
 // using consistent formatting and emoji indicators.
 func printContainerInfo(info *ffmpeg.ContainerInfo) {
+	// Initialize styles
 	summaryStyle := color.New(color.Bold, color.FgCyan)
 	valueStyle := color.New(color.Bold)
 	regularStyle := color.New(color.Reset)
 
+	// Print general container information
+	printGeneralInfo(info, summaryStyle, valueStyle, regularStyle)
+
+	// Print video streams information
+	printVideoStreamsInfo(info, summaryStyle, valueStyle, regularStyle)
+
+	// Print audio streams information
+	printAudioStreamsInfo(info, summaryStyle, valueStyle, regularStyle)
+
+	// Print subtitle streams information
+	printSubtitleStreamsInfo(info, summaryStyle, valueStyle, regularStyle)
+}
+
+// printGeneralInfo prints general information about the container.
+func printGeneralInfo(info *ffmpeg.ContainerInfo, summaryStyle, valueStyle, regularStyle *color.Color) {
 	summaryStyle.Println("\n📊 Container Information:")
 	regularStyle.Println("---------------------")
 
@@ -111,96 +127,146 @@ func printContainerInfo(info *ffmpeg.ContainerInfo) {
 	regularStyle.Printf("⏱️ Duration: ")
 	valueStyle.Printf("%.3f seconds\n", info.General.DurationF)
 
+	// Print bitrate information
+	bitRate := parseBitRate(info.General.BitRate)
 	regularStyle.Printf("⚡ Overall bitrate: ")
-	// Parse bit rate from string
-	bitRate := int64(0)
-	if info.General.BitRate != "" {
-		parts := strings.Fields(info.General.BitRate)
-		if len(parts) >= 1 {
-			// Handle formats like "5 000" by removing spaces
-			valueStr := strings.ReplaceAll(parts[0], " ", "")
-			parsedBitRate, err := strconv.ParseInt(valueStr, 10, 64)
-			if err == nil {
-				// Convert to bits per second based on unit
-				if len(parts) > 1 {
-					unit := strings.ToLower(parts[1])
-					if strings.HasPrefix(unit, "kb") {
-						parsedBitRate *= 1000
-					} else if strings.HasPrefix(unit, "mb") {
-						parsedBitRate *= 1000000
-					} else if strings.HasPrefix(unit, "gb") {
-						parsedBitRate *= 1000000000
-					}
-				}
-				bitRate = parsedBitRate
-			}
-		}
-	}
 	valueStyle.Printf("%.2f Kbps\n", float64(bitRate)/1000)
 
-	// Frame rate is not directly available in the new GeneralInfo struct
-	// We can calculate it from the first video stream if available
-	frameRate := 0.0
-	if len(info.VideoStreams) > 0 {
-		frameRate = info.VideoStreams[0].FrameRate
-	}
+	// Print frame rate
+	frameRate := getFrameRate(info)
 	regularStyle.Printf("🖼️ Frame rate: ")
 	valueStyle.Printf("%.3f fps\n", frameRate)
+}
 
+// parseBitRate parses the bitrate string and returns the value in bits per second.
+func parseBitRate(bitRateStr string) int64 {
+	bitRate := int64(0)
+	if bitRateStr == "" {
+		return bitRate
+	}
+
+	parts := strings.Fields(bitRateStr)
+	if len(parts) < 1 {
+		return bitRate
+	}
+
+	// Handle formats like "5 000" by removing spaces
+	valueStr := strings.ReplaceAll(parts[0], " ", "")
+	parsedBitRate, err := strconv.ParseInt(valueStr, 10, 64)
+	if err != nil {
+		return bitRate
+	}
+
+	// Convert to bits per second based on unit
+	if len(parts) > 1 {
+		unit := strings.ToLower(parts[1])
+		if strings.HasPrefix(unit, "kb") {
+			parsedBitRate *= 1000
+		} else if strings.HasPrefix(unit, "mb") {
+			parsedBitRate *= 1000000
+		} else if strings.HasPrefix(unit, "gb") {
+			parsedBitRate *= 1000000000
+		}
+	}
+
+	return parsedBitRate
+}
+
+// getFrameRate extracts the frame rate from the first video stream if available.
+func getFrameRate(info *ffmpeg.ContainerInfo) float64 {
 	if len(info.VideoStreams) > 0 {
-		summaryStyle.Println("\n🎬 Video Streams:")
-		regularStyle.Println("-------------")
-		for i, stream := range info.VideoStreams {
-			regularStyle.Printf("Stream #%d:\n", i)
-			regularStyle.Printf("  🎞️ Codec: ")
-			valueStyle.Printf("%s (%s)\n", stream.Format, stream.FormatProfile)
-			regularStyle.Printf("  📐 Resolution: ")
-			valueStyle.Printf("%dx%d pixels\n", stream.Width, stream.Height)
-			regularStyle.Printf("  📺 Display Aspect Ratio: ")
-			valueStyle.Printf("%.3f\n", stream.DisplayAspectRatio)
-			regularStyle.Printf("  🔍 Bit depth: ")
-			valueStyle.Printf("%d bits\n", stream.BitDepth)
-			regularStyle.Printf("  ⚡ Bit rate: ")
-			valueStyle.Printf("%.2f Kbps\n", float64(stream.BitRate)/1000)
-			regularStyle.Printf("  🖼️ Frame rate: ")
-			valueStyle.Printf("%.3f fps\n", stream.FrameRate)
-			regularStyle.Printf("  📲 Scan type: ")
-			valueStyle.Printf("%s\n", stream.ScanType)
-			regularStyle.Printf("  🎨 Color space: ")
-			valueStyle.Printf("%s\n", stream.ColorSpace)
-		}
+		return info.VideoStreams[0].FrameRate
+	}
+	return 0.0
+}
+
+// printVideoStreamsInfo prints information about video streams.
+func printVideoStreamsInfo(info *ffmpeg.ContainerInfo, summaryStyle, valueStyle, regularStyle *color.Color) {
+	if len(info.VideoStreams) == 0 {
+		return
 	}
 
-	if len(info.AudioStreams) > 0 {
-		summaryStyle.Println("\n🔊 Audio Streams:")
-		regularStyle.Println("-------------")
-		for i, stream := range info.AudioStreams {
-			regularStyle.Printf("Stream #%d:\n", i)
-			regularStyle.Printf("  🎚️ Codec: ")
-			valueStyle.Printf("%s\n", stream.Format)
-			regularStyle.Printf("  🔈 Channels: ")
-			valueStyle.Printf("%d (%s)\n", stream.Channels, stream.ChannelLayout)
-			regularStyle.Printf("  📊 Sample rate: ")
-			valueStyle.Printf("%d Hz\n", stream.SamplingRate)
-			regularStyle.Printf("  ⚡ Bit rate: ")
-			valueStyle.Printf("%.2f Kbps\n", float64(stream.BitRate)/1000)
-			regularStyle.Printf("  🌐 Language: ")
-			valueStyle.Printf("%s\n", stream.Language)
-		}
+	summaryStyle.Println("\n🎬 Video Streams:")
+	regularStyle.Println("-------------")
+
+	for i, stream := range info.VideoStreams {
+		regularStyle.Printf("Stream #%d:\n", i)
+
+		regularStyle.Printf("  🎞️ Codec: ")
+		valueStyle.Printf("%s (%s)\n", stream.Format, stream.FormatProfile)
+
+		regularStyle.Printf("  📐 Resolution: ")
+		valueStyle.Printf("%dx%d pixels\n", stream.Width, stream.Height)
+
+		regularStyle.Printf("  📺 Display Aspect Ratio: ")
+		valueStyle.Printf("%.3f\n", stream.DisplayAspectRatio)
+
+		regularStyle.Printf("  🔍 Bit depth: ")
+		valueStyle.Printf("%d bits\n", stream.BitDepth)
+
+		regularStyle.Printf("  ⚡ Bit rate: ")
+		valueStyle.Printf("%.2f Kbps\n", float64(stream.BitRate)/1000)
+
+		regularStyle.Printf("  🖼️ Frame rate: ")
+		valueStyle.Printf("%.3f fps\n", stream.FrameRate)
+
+		regularStyle.Printf("  📲 Scan type: ")
+		valueStyle.Printf("%s\n", stream.ScanType)
+
+		regularStyle.Printf("  🎨 Color space: ")
+		valueStyle.Printf("%s\n", stream.ColorSpace)
+	}
+}
+
+// printAudioStreamsInfo prints information about audio streams.
+func printAudioStreamsInfo(info *ffmpeg.ContainerInfo, summaryStyle, valueStyle, regularStyle *color.Color) {
+	if len(info.AudioStreams) == 0 {
+		return
 	}
 
-	if len(info.SubtitleStreams) > 0 {
-		summaryStyle.Println("\n💬 Subtitle Streams:")
-		regularStyle.Println("----------------")
-		for i, stream := range info.SubtitleStreams {
-			regularStyle.Printf("Stream #%d:\n", i)
-			regularStyle.Printf("  📝 Codec: ")
-			valueStyle.Printf("%s\n", stream.Format)
-			regularStyle.Printf("  🌐 Language: ")
-			valueStyle.Printf("%s\n", stream.Language)
-			regularStyle.Printf("  📌 Title: ")
-			valueStyle.Printf("%s\n", stream.Title)
-		}
+	summaryStyle.Println("\n🔊 Audio Streams:")
+	regularStyle.Println("-------------")
+
+	for i, stream := range info.AudioStreams {
+		regularStyle.Printf("Stream #%d:\n", i)
+
+		regularStyle.Printf("  🎚️ Codec: ")
+		valueStyle.Printf("%s\n", stream.Format)
+
+		regularStyle.Printf("  🔈 Channels: ")
+		valueStyle.Printf("%d (%s)\n", stream.Channels, stream.ChannelLayout)
+
+		regularStyle.Printf("  📊 Sample rate: ")
+		valueStyle.Printf("%d Hz\n", stream.SamplingRate)
+
+		regularStyle.Printf("  ⚡ Bit rate: ")
+		valueStyle.Printf("%.2f Kbps\n", float64(stream.BitRate)/1000)
+
+		regularStyle.Printf("  🌐 Language: ")
+		valueStyle.Printf("%s\n", stream.Language)
+	}
+}
+
+// printSubtitleStreamsInfo prints information about subtitle streams.
+func printSubtitleStreamsInfo(info *ffmpeg.ContainerInfo, summaryStyle, valueStyle, regularStyle *color.Color) {
+	if len(info.SubtitleStreams) == 0 {
+		return
+	}
+
+	summaryStyle.Println("\n💬 Subtitle Streams:")
+	regularStyle.Println("----------------")
+
+	for i, stream := range info.SubtitleStreams {
+		regularStyle.Printf("Stream #%d:\n", i)
+
+		regularStyle.Printf("  📝 Codec: ")
+		valueStyle.Printf("%s\n", stream.Format)
+
+		regularStyle.Printf("  🌐 Language: ")
+		valueStyle.Printf("%s\n", stream.Language)
+
+		regularStyle.Printf("  📌 Title: ")
+		valueStyle.Printf("%s\n", stream.Title)
 	}
 }
 

@@ -71,95 +71,159 @@ func (s *BitrateAnalyzerTestSuite) TestAnalyze() {
 
 	for _, tc := range testCases {
 		s.Run(tc.name, func() {
-			// Check if file exists
-			if _, err := os.Stat(tc.filePath); os.IsNotExist(err) {
-				s.T().Skipf("Test file %s does not exist, skipping test", tc.filePath)
+			// Skip if file doesn't exist
+			if !s.fileExists(tc.filePath) {
 				return
 			}
 
-			// Print the paths being used to help with debugging
 			s.T().Logf("Using FFprobe path: %s for analysis", s.analyzer.FFprobePath)
 
-			// Create a context with timeout
-			ctx, cancel := context.WithTimeout(context.Background(), time.Duration(tc.timeoutSeconds)*time.Second)
+			// Create test environment and run the test
+			ctx, cancel, resultCh, analysisDone := s.setupTestEnvironment(tc)
 			defer cancel()
 
-			// Create a channel to receive frame bitrate info
-			resultCh := make(chan FrameBitrateInfo, 10)
-
-			// Start the analysis in a goroutine
-			analysisDone := make(chan error, 1)
-			go func() {
-				analysisDone <- s.analyzer.Analyze(ctx, tc.filePath, resultCh)
-			}()
-
-			// Collect and verify results
-			frameCount := 0
-			iFrameCount := 0
-			pFrameCount := 0
-			bFrameCount := 0
-
-			// Process frames until analysis is done, timeout, or max frames reached
-			for {
-				select {
-				case err := <-analysisDone:
-					// Analysis finished
-					if err != nil && !strings.Contains(err.Error(), "context deadline exceeded") {
-						s.T().Logf("Analysis error details: %v", err)
-						s.T().Skipf("Failed to analyze %s: %v - skipping test as it may depend on specific FFmpeg capabilities", tc.filePath, err)
-					} else {
-						// If we've processed at least some frames, consider the test successful
-						if frameCount > 0 {
-							s.T().Logf("Analysis completed. Processed %d frames (%d I-frames, %d P-frames, %d B-frames)",
-								frameCount, iFrameCount, pFrameCount, bFrameCount)
-						} else {
-							s.T().Skip("Analysis completed but no frames were processed, skipping test")
-						}
-					}
-					return
-
-				case frame, ok := <-resultCh:
-					if !ok {
-						// Channel closed, wait for analysis to complete
-						continue
-					}
-
-					// Count frame types
-					frameCount++
-					switch frame.FrameType {
-					case "I":
-						iFrameCount++
-					case "P":
-						pFrameCount++
-					case "B":
-						bFrameCount++
-					}
-
-					// Log some frame info for debugging
-					if frameCount <= 5 || frameCount%100 == 0 {
-						s.T().Logf("Frame %d: Type=%s, Bitrate=%d bits",
-							frame.FrameNumber, frame.FrameType, frame.Bitrate)
-					}
-
-					// If we've reached the maximum number of frames, cancel the context to stop processing
-					if frameCount >= tc.maxFrames {
-						s.T().Logf("Reached maximum frame count (%d). Processed %d frames (%d I-frames, %d P-frames, %d B-frames)",
-							tc.maxFrames, frameCount, iFrameCount, pFrameCount, bFrameCount)
-						cancel() // Stop the analysis
-						return
-					}
-
-				case <-ctx.Done():
-					// Context timeout or cancellation
-					if frameCount > 0 {
-						s.T().Logf("Context finished after processing %d frames, but test is considered successful", frameCount)
-					} else {
-						s.T().Skip("Context finished but no frames were processed, skipping test")
-					}
-					return
-				}
-			}
+			s.runTestCase(ctx, tc, resultCh, analysisDone)
 		})
+	}
+}
+
+// fileExists checks if a file exists and logs a skip message if it doesn't.
+func (s *BitrateAnalyzerTestSuite) fileExists(filePath string) bool {
+	if _, err := os.Stat(filePath); os.IsNotExist(err) {
+		s.T().Skipf("Test file %s does not exist, skipping test", filePath)
+		return false
+	}
+	return true
+}
+
+// setupTestEnvironment prepares the test context, channels, and starts the analysis.
+func (s *BitrateAnalyzerTestSuite) setupTestEnvironment(tc struct {
+	name           string
+	filePath       string
+	maxFrames      int
+	timeoutSeconds int
+}) (context.Context, context.CancelFunc, chan FrameBitrateInfo, chan error) {
+	// Create a context with timeout
+	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(tc.timeoutSeconds)*time.Second)
+
+	// Create a channel to receive frame bitrate info
+	resultCh := make(chan FrameBitrateInfo, 10)
+
+	// Start the analysis in a goroutine
+	analysisDone := make(chan error, 1)
+	go func() {
+		analysisDone <- s.analyzer.Analyze(ctx, tc.filePath, resultCh)
+	}()
+
+	return ctx, cancel, resultCh, analysisDone
+}
+
+// runTestCase processes the frames and handles the test result.
+func (s *BitrateAnalyzerTestSuite) runTestCase(
+	ctx context.Context,
+	tc struct {
+		name           string
+		filePath       string
+		maxFrames      int
+		timeoutSeconds int
+	},
+	resultCh chan FrameBitrateInfo,
+	analysisDone chan error,
+) {
+	frameCount := 0
+	frameCounts := map[string]int{
+		"I": 0,
+		"P": 0,
+		"B": 0,
+	}
+
+	// Process frames until analysis is done, timeout, or max frames reached
+	for {
+		select {
+		case err := <-analysisDone:
+			s.handleAnalysisDone(err, frameCount, frameCounts, tc.filePath)
+			return
+
+		case frame, ok := <-resultCh:
+			if !ok {
+				// Channel closed, wait for analysis to complete
+				continue
+			}
+
+			frameCount++
+			s.processFrame(frame, frameCount, frameCounts)
+
+			// Check if max frames reached
+			if frameCount >= tc.maxFrames {
+				s.logFrameCounts(frameCount, frameCounts, tc.maxFrames, true)
+				return
+			}
+
+		case <-ctx.Done():
+			s.handleContextDone(frameCount)
+			return
+		}
+	}
+}
+
+// handleAnalysisDone processes the completion of the analysis.
+func (s *BitrateAnalyzerTestSuite) handleAnalysisDone(
+	err error,
+	frameCount int,
+	frameCounts map[string]int,
+	filePath string,
+) {
+	if err != nil && !strings.Contains(err.Error(), "context deadline exceeded") {
+		s.T().Logf("Analysis error details: %v", err)
+		s.T().Skipf("Failed to analyze %s: %v - skipping test as it may depend on specific FFmpeg capabilities",
+			filePath, err)
+		return
+	}
+
+	// If we've processed at least some frames, consider the test successful
+	if frameCount > 0 {
+		s.logFrameCounts(frameCount, frameCounts, 0, false)
+	} else {
+		s.T().Skip("Analysis completed but no frames were processed, skipping test")
+	}
+}
+
+// processFrame counts frame types and logs frame info.
+func (s *BitrateAnalyzerTestSuite) processFrame(frame FrameBitrateInfo, frameCount int, frameCounts map[string]int) {
+	// Count frame types
+	if _, exists := frameCounts[frame.FrameType]; exists {
+		frameCounts[frame.FrameType]++
+	}
+
+	// Log some frame info for debugging
+	if frameCount <= 5 || frameCount%100 == 0 {
+		s.T().Logf("Frame %d: Type=%s, Bitrate=%d bits",
+			frame.FrameNumber, frame.FrameType, frame.Bitrate)
+	}
+}
+
+// logFrameCounts logs statistics about processed frames.
+func (s *BitrateAnalyzerTestSuite) logFrameCounts(
+	frameCount int,
+	frameCounts map[string]int,
+	maxFrames int,
+	reachedMax bool,
+) {
+	if reachedMax {
+		s.T().Logf("Reached maximum frame count (%d). Processed %d frames (%d I-frames, %d P-frames, %d B-frames)",
+			maxFrames, frameCount, frameCounts["I"], frameCounts["P"], frameCounts["B"])
+	} else {
+		s.T().Logf("Analysis completed. Processed %d frames (%d I-frames, %d P-frames, %d B-frames)",
+			frameCount, frameCounts["I"], frameCounts["P"], frameCounts["B"])
+	}
+}
+
+// handleContextDone handles the case when the context is done.
+func (s *BitrateAnalyzerTestSuite) handleContextDone(frameCount int) {
+	if frameCount > 0 {
+		s.T().Logf("Context finished after processing %d frames, but test is considered successful", frameCount)
+	} else {
+		s.T().Skip("Context finished but no frames were processed, skipping test")
 	}
 }
 

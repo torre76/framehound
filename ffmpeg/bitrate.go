@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os/exec"
 	"strings"
 )
@@ -67,9 +68,29 @@ func (b *BitrateAnalyzer) Analyze(ctx context.Context, filePath string, resultCh
 	childCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	// Create the FFprobe command to extract frame information
+	// Set up command and start it
+	cmd, stdout, err := b.setupCommand(childCtx, filePath)
+	if err != nil {
+		return err
+	}
+
+	// Set up done channel and error for processing
+	done := make(chan struct{})
+	var processErr error
+
+	// Process the data in a goroutine
+	go func() {
+		defer close(done)
+		processErr = b.processOutput(childCtx, stdout, resultCh, cancel)
+	}()
+
+	return b.waitForCompletion(ctx, cmd, done, processErr, cancel)
+}
+
+// setupCommand creates and starts the FFprobe command.
+func (b *BitrateAnalyzer) setupCommand(ctx context.Context, filePath string) (*exec.Cmd, io.ReadCloser, error) {
 	cmd := exec.CommandContext(
-		childCtx,
+		ctx,
 		b.FFprobePath,
 		"-v", "quiet",
 		"-select_streams", "v:0", // Select first video stream
@@ -81,118 +102,139 @@ func (b *BitrateAnalyzer) Analyze(ctx context.Context, filePath string, resultCh
 	// Get stdout pipe
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
-		return fmt.Errorf("failed to get stdout pipe: %w", err)
+		return nil, nil, fmt.Errorf("failed to get stdout pipe: %w", err)
 	}
 
 	// Start the command
 	if err := cmd.Start(); err != nil {
-		return fmt.Errorf("failed to start FFprobe: %w", err)
+		return nil, nil, fmt.Errorf("failed to start FFprobe: %w", err)
 	}
 
-	// Set up done channel and error for processing
-	done := make(chan struct{})
-	var processErr error
+	return cmd, stdout, nil
+}
 
-	// Process the data in a goroutine
-	go func() {
-		defer close(done)
+// processOutput handles the JSON output from FFprobe and extracts frame information.
+func (b *BitrateAnalyzer) processOutput(ctx context.Context, stdout io.ReadCloser, resultCh chan<- FrameBitrateInfo, cancel context.CancelFunc) error {
+	// Create a decoder for streaming JSON
+	decoder := json.NewDecoder(stdout)
 
-		// Create a decoder for streaming JSON
-		decoder := json.NewDecoder(stdout)
+	// Parse the initial JSON structure
+	if err := b.parseJSONHeader(decoder, cancel); err != nil {
+		return err
+	}
 
-		// Look for the start of frames array
-		_, err := decoder.Token() // We don't use the token value
-		if err != nil {
-			processErr = fmt.Errorf("error parsing JSON token: %w", err)
+	// Process frames
+	return b.processFrames(ctx, decoder, resultCh, cancel)
+}
+
+// parseJSONHeader handles the JSON structure before the frame array.
+func (b *BitrateAnalyzer) parseJSONHeader(decoder *json.Decoder, cancel context.CancelFunc) error {
+	// Look for the start of frames array
+	_, err := decoder.Token() // We don't use the token value
+	if err != nil {
+		cancel() // Cancel the command
+		return fmt.Errorf("error parsing JSON token: %w", err)
+	}
+
+	fieldName, err := decoder.Token()
+	if err != nil {
+		cancel() // Cancel the command
+		return fmt.Errorf("error parsing JSON field name: %w", err)
+	}
+
+	if fieldName != "frames" {
+		cancel() // Cancel the command
+		return fmt.Errorf("unexpected JSON field: %v, expected 'frames'", fieldName)
+	}
+
+	// Expect array start
+	_, err = decoder.Token() // We don't use the array token value
+	if err != nil {
+		cancel() // Cancel the command
+		return fmt.Errorf("error parsing JSON array start: %w", err)
+	}
+
+	return nil
+}
+
+// processFrames handles the individual frame data from the JSON.
+func (b *BitrateAnalyzer) processFrames(ctx context.Context, decoder *json.Decoder, resultCh chan<- FrameBitrateInfo, cancel context.CancelFunc) error {
+	frameNumber := 0
+
+	for decoder.More() {
+		// Check if context is canceled
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+			// Continue processing
+		}
+
+		// Decode frame info
+		var frameInfo ffprobeFrameInfo
+		if err := decoder.Decode(&frameInfo); err != nil {
 			cancel() // Cancel the command
-			return
+			return fmt.Errorf("error decoding frame info: %w", err)
 		}
 
-		fieldName, err := decoder.Token()
-		if err != nil {
-			processErr = fmt.Errorf("error parsing JSON field name: %w", err)
-			cancel() // Cancel the command
-			return
+		// Skip non-video frames
+		if frameInfo.MediaType != "video" {
+			continue
 		}
 
-		if fieldName != "frames" {
-			processErr = fmt.Errorf("unexpected JSON field: %v, expected 'frames'", fieldName)
-			cancel() // Cancel the command
-			return
+		// Create and send frame info
+		if err := b.processVideoFrame(ctx, frameInfo, frameNumber, resultCh); err != nil {
+			return err
 		}
 
-		// Expect array start
-		_, err = decoder.Token() // We don't use the array token value
-		if err != nil {
-			processErr = fmt.Errorf("error parsing JSON array start: %w", err)
-			cancel() // Cancel the command
-			return
-		}
+		frameNumber++
+	}
 
-		// Process frames
-		frameNumber := 0
-		for decoder.More() {
-			// Check if context is canceled
-			select {
-			case <-childCtx.Done():
-				processErr = childCtx.Err()
-				return
-			default:
-				// Continue processing
-			}
+	return nil
+}
 
-			var frameInfo ffprobeFrameInfo
-			if err := decoder.Decode(&frameInfo); err != nil {
-				processErr = fmt.Errorf("error decoding frame info: %w", err)
-				cancel() // Cancel the command
-				return
-			}
+// processVideoFrame extracts information from a video frame and sends it to the result channel.
+func (b *BitrateAnalyzer) processVideoFrame(ctx context.Context, frameInfo ffprobeFrameInfo, frameNumber int, resultCh chan<- FrameBitrateInfo) error {
+	// Extract frame size in bits
+	pktSize, err := frameInfo.PktSize.Int64()
+	if err != nil {
+		return nil // Skip frames with invalid size, not a fatal error
+	}
 
-			// Check if this is a video frame (media_type == "video")
-			if frameInfo.MediaType != "video" {
-				continue
-			}
+	// Extract PTS (Presentation Timestamp)
+	pts, _ := frameInfo.PktPts.Int64()
 
-			// Extract frame size in bits
-			pktSize, err := frameInfo.PktSize.Int64()
-			if err != nil {
-				continue // Skip frames with invalid size
-			}
+	// Extract DTS (Decoding Timestamp)
+	dts, _ := frameInfo.PktDts.Int64()
 
-			// Extract PTS (Presentation Timestamp)
-			pts, _ := frameInfo.PktPts.Int64()
+	// Determine frame type from picture type
+	frameType := strings.ToUpper(frameInfo.PictType)
+	if frameType == "" {
+		frameType = "?"
+	}
 
-			// Extract DTS (Decoding Timestamp)
-			dts, _ := frameInfo.PktDts.Int64()
+	// Create frame bitrate info
+	info := FrameBitrateInfo{
+		FrameNumber: frameNumber,
+		FrameType:   frameType,
+		Bitrate:     pktSize * 8, // Convert bytes to bits
+		PTS:         pts,
+		DTS:         dts,
+	}
 
-			// Determine frame type from picture type
-			frameType := strings.ToUpper(frameInfo.PictType)
-			if frameType == "" {
-				frameType = "?"
-			}
+	// Send to the channel
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case resultCh <- info:
+		// Successfully sent
+	}
 
-			// Create frame bitrate info
-			info := FrameBitrateInfo{
-				FrameNumber: frameNumber,
-				FrameType:   frameType,
-				Bitrate:     pktSize * 8, // Convert bytes to bits
-				PTS:         pts,
-				DTS:         dts,
-			}
+	return nil
+}
 
-			// Send to the channel
-			select {
-			case <-childCtx.Done():
-				processErr = childCtx.Err()
-				return
-			case resultCh <- info:
-				// Successfully sent
-			}
-
-			frameNumber++
-		}
-	}()
-
+// waitForCompletion waits for the processing to complete or the context to be cancelled.
+func (b *BitrateAnalyzer) waitForCompletion(ctx context.Context, cmd *exec.Cmd, done chan struct{}, processErr error, cancel context.CancelFunc) error {
 	// Wait for completion or timeout
 	select {
 	case <-done:
