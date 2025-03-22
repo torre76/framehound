@@ -135,62 +135,73 @@ func checkQPReadingSupport(ffmpegPath string, versionOutput string) bool {
 	return false
 }
 
-// extractVersionInfo parses the FFmpeg version output to extract detailed version information.
-// It identifies the FFmpeg version number, build configuration, and supported libraries
-// by analyzing the text output from the ffmpeg -version command. This information
-// helps determine feature compatibility and capabilities of the installed FFmpeg.
+// extractVersionInfo parses FFmpeg's version output to extract version, configuration and libraries.
+// It breaks down the raw version output into structured components, making it easier to
+// understand the capabilities of the installed FFmpeg instance.
 func extractVersionInfo(versionOutput string) (string, string, []string) {
 	lines := strings.Split(versionOutput, "\n")
 	if len(lines) == 0 {
 		return "", "", nil
 	}
 
-	// Extract version from first line
-	version := ""
-	if len(lines) > 0 {
-		firstLine := lines[0]
-		versionParts := strings.Split(firstLine, " version ")
-		if len(versionParts) > 1 {
-			remainingParts := strings.Split(versionParts[1], " ")
-			if len(remainingParts) > 0 {
-				version = remainingParts[0]
-			}
-		}
+	version := parseVersionFromFirstLine(lines[0])
+	configuration := extractConfiguration(lines)
+	libraries := extractLibraries(lines)
 
-		// If no version found but contains (c), extract that instead
-		if version == "" && strings.Contains(firstLine, "(c)") {
-			version = "(c)"
+	return version, configuration, libraries
+}
+
+// parseVersionFromFirstLine parses the version string from the first line of FFmpeg output.
+func parseVersionFromFirstLine(firstLine string) string {
+	versionParts := strings.Split(firstLine, " version ")
+	if len(versionParts) > 1 {
+		remainingParts := strings.Split(versionParts[1], " ")
+		if len(remainingParts) > 0 {
+			return remainingParts[0]
 		}
 	}
 
-	// Extract configuration
-	configuration := ""
+	// If no version found but contains (c), extract that instead
+	if strings.Contains(firstLine, "(c)") {
+		return "(c)"
+	}
+
+	return ""
+}
+
+// extractConfiguration finds the configuration line in FFmpeg output.
+func extractConfiguration(lines []string) string {
 	for _, line := range lines {
 		if strings.HasPrefix(line, "  configuration:") {
-			configuration = strings.TrimSpace(strings.TrimPrefix(line, "  configuration:"))
-			break
+			return strings.TrimSpace(strings.TrimPrefix(line, "  configuration:"))
 		}
 	}
+	return ""
+}
 
-	// Extract libraries
+// extractLibraries parses the libraries section from FFmpeg output.
+func extractLibraries(lines []string) []string {
 	var libraries []string
 	capturingLibraries := false
+
 	for _, line := range lines {
+		// Start capturing when we see a line starting with "libavutil" or "lib"
 		if strings.HasPrefix(line, "  libavutil") || strings.HasPrefix(line, "  lib") {
 			capturingLibraries = true
 		}
 
+		// Capture library lines
 		if capturingLibraries && strings.HasPrefix(line, "  lib") {
 			libraries = append(libraries, strings.TrimSpace(line))
 		}
 
-		// Stop when we hit a line that doesn't start with "  lib" after we've started capturing
+		// Stop when we hit a non-empty line that doesn't start with "  lib" after we've started capturing
 		if capturingLibraries && !strings.HasPrefix(line, "  lib") && line != "" {
 			capturingLibraries = false
 		}
 	}
 
-	return version, configuration, libraries
+	return libraries
 }
 
 // getFFmpegVersion retrieves and parses the version information from the FFmpeg executable.

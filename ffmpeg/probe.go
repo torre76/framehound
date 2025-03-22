@@ -364,7 +364,7 @@ func (p *Prober) processStreams(streams []ffprobeStreamOutput, containerInfo *Co
 			containerInfo.AudioStreams = append(containerInfo.AudioStreams, audioStream)
 
 		case "subtitle":
-			subtitleStream := p.processSubtitleStream(stream, streamInfo)
+			subtitleStream := p.processSubtitleStream(streamInfo)
 			containerInfo.SubtitleStreams = append(containerInfo.SubtitleStreams, subtitleStream)
 
 		case "attachment":
@@ -372,7 +372,7 @@ func (p *Prober) processStreams(streams []ffprobeStreamOutput, containerInfo *Co
 			containerInfo.AttachmentStreams = append(containerInfo.AttachmentStreams, attachmentStream)
 
 		case "data":
-			dataStream := p.processDataStream(stream, streamInfo)
+			dataStream := p.processDataStream(streamInfo)
 			containerInfo.DataStreams = append(containerInfo.DataStreams, dataStream)
 
 		default:
@@ -493,7 +493,7 @@ func (p *Prober) processAudioStream(stream ffprobeStreamOutput, info StreamInfo)
 }
 
 // processSubtitleStream converts ffprobe data to a SubtitleStream.
-func (p *Prober) processSubtitleStream(stream ffprobeStreamOutput, info StreamInfo) SubtitleStream {
+func (p *Prober) processSubtitleStream(info StreamInfo) SubtitleStream {
 	return SubtitleStream{
 		Index:      info.Index,
 		Format:     info.Format,
@@ -525,7 +525,7 @@ func (p *Prober) processAttachmentStream(stream ffprobeStreamOutput) AttachmentS
 }
 
 // processDataStream converts ffprobe data to a DataStream.
-func (p *Prober) processDataStream(stream ffprobeStreamOutput, info StreamInfo) DataStream {
+func (p *Prober) processDataStream(info StreamInfo) DataStream {
 	return DataStream{
 		Index:      info.Index,
 		Format:     info.Format,
