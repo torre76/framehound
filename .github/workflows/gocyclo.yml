@@ -1,0 +1,40 @@
+name: Cyclomatic Complexity Check
+
+on:
+  push:
+    branches: [ main, "**" ]  # Run on all branches
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  gocyclo:
+    name: Cyclomatic Complexity
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: '1.24'
+        cache: true
+
+    - name: Install gocyclo
+      run: go install github.com/fzipp/gocyclo/cmd/gocyclo@latest
+
+    - name: Run gocyclo
+      # This command will return a non-zero exit code if any function exceeds the complexity threshold
+      # causing the workflow to fail
+      run: |
+        # Run gocyclo with a threshold of 15
+        echo "Checking for functions with cyclomatic complexity greater than 15..."
+        GOCYCLO_OUTPUT=$(~/go/bin/gocyclo -over 15 .)
+        
+        # If there's any output, print it and fail
+        if [ -n "$GOCYCLO_OUTPUT" ]; then
+          echo "❌ The following functions exceed the maximum allowed cyclomatic complexity of 15:"
+          echo "$GOCYCLO_OUTPUT"
+          exit 1
+        else
+          echo "✅ All functions have a cyclomatic complexity of 15 or less"
+        fi 

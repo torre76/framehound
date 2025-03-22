@@ -45,6 +45,12 @@ type AudioStream struct {
 	// FormatInfo is additional information about the format.
 	FormatInfo string
 
+	// FormatProfile is the profile of the format.
+	FormatProfile string
+
+	// FormatSettings is the settings of the format.
+	FormatSettings string
+
 	// CommercialName is the commercial name of the format.
 	CommercialName string
 
@@ -67,7 +73,7 @@ type AudioStream struct {
 	ChannelLayout string
 
 	// SamplingRate is the sampling rate of the audio stream in Hz.
-	SamplingRate float64
+	SamplingRate int
 
 	// FrameRate is the frame rate of the audio stream.
 	FrameRate float64
@@ -89,6 +95,9 @@ type AudioStream struct {
 
 	// Forced indicates whether this stream is forced.
 	Forced bool
+
+	// BitDepth is the bit depth of the audio stream.
+	BitDepth int
 }
 
 // BitrateAnalyzer provides methods to analyze bitrate values from video files.
@@ -99,7 +108,6 @@ type BitrateAnalyzer struct {
 	// mutex protects concurrent access to internal state
 	mutex sync.Mutex
 }
-
 
 // ContainerInfo represents detailed metadata about a media container file.
 // It provides a structured representation of the container's properties including
@@ -272,87 +280,70 @@ type SubtitleStream struct {
 	Forced bool
 }
 
-// VideoInfo contains information about a video file
+// VideoInfo represents high-level information about a video file
 type VideoInfo struct {
-	// Codec is the video codec name (h264, hevc, etc.)
-	Codec string
-	// Width is the video width in pixels
-	Width int
-	// Height is the video height in pixels
-	Height int
-	// FrameRate is the video frame rate in frames per second
-	FrameRate float64
-	// Duration is the video duration in seconds
-	Duration float64
-	// FilePath is the path to the video file
-	FilePath string
+	FileName       string          `json:"file_name"`
+	Format         string          `json:"format"`
+	VideoFormat    string          `json:"video_format"`
+	Width          int             `json:"width"`
+	Height         int             `json:"height"`
+	FileSizeMB     float64         `json:"file_size_mb"`
+	Duration       float64         `json:"duration"`
+	FrameRate      float64         `json:"frame_rate"`
+	AspectRatio    float64         `json:"aspect_ratio"`
+	BitRate        int64           `json:"bit_rate"`
+	VideoStreams   []VideoStream   `json:"video_streams"`
+	AudioStreams   []AudioStream   `json:"audio_streams"`
+	AudioTracks    []AudioTrack    `json:"audio_tracks"`
+	SubtitleTracks []SubtitleTrack `json:"subtitle_tracks"`
 }
 
-// VideoStream contains information about a video stream in a container.
+// VideoStream represents information about a video stream in a media file
 type VideoStream struct {
-	// ID is the ID of the stream.
-	ID string
+	ID                      string  `json:"id"`
+	Format                  string  `json:"format"`
+	FormatInfo              string  `json:"format_info"`
+	FormatProfile           string  `json:"format_profile"`
+	FormatSettings          string  `json:"format_settings"`
+	FormatSettingsCABAC     string  `json:"format_settings_cabac"`
+	FormatSettingsRefFrames int     `json:"format_settings_ref_frames"`
+	CodecID                 string  `json:"codec_id"`
+	CodecIDInfo             string  `json:"codec_id_info"`
+	CodecIDHint             string  `json:"codec_id_hint"`
+	Duration                float64 `json:"duration"`
+	BitRate                 int64   `json:"bit_rate"`
+	Width                   int     `json:"width"`
+	Height                  int     `json:"height"`
+	AspectRatio             string  `json:"aspect_ratio"`
+	DisplayAspectRatio      float64 `json:"display_aspect_ratio"`
+	FrameRate               float64 `json:"frame_rate"`
+	FrameRateMode           string  `json:"frame_rate_mode"`
+	BitDepth                int     `json:"bit_depth"`
+	ColorSpace              string  `json:"color_space"`
+	ChromaSubsampling       string  `json:"chroma_subsampling"`
+	ScanType                string  `json:"scan_type"`
+	StreamSize              int64   `json:"stream_size"`
+	Language                string  `json:"language"`
+	Title                   string  `json:"title"`
+	Default                 bool    `json:"default"`
+	Forced                  bool    `json:"forced"`
+	CompressionMode         string  `json:"compression_mode"`
+	BitsPerPixel            float64 `json:"bits_per_pixel"`
+}
 
-	// Format is the format of the video stream.
-	Format string
+// AudioTrack represents a simplified audio track
+type AudioTrack struct {
+	Index    string `json:"index"`
+	Format   string `json:"format"`
+	Language string `json:"language"`
+	Channels int    `json:"channels"`
+	Default  bool   `json:"default"`
+}
 
-	// FormatInfo is additional information about the format.
-	FormatInfo string
-
-	// FormatProfile is the profile of the format.
-	FormatProfile string
-
-	// FormatSettings is the settings of the format.
-	FormatSettings string
-
-	// CodecID is the ID of the codec.
-	CodecID string
-
-	// Duration is the duration of the video stream in seconds.
-	Duration float64
-
-	// BitRate is the bit rate of the video stream in bits per second.
-	BitRate int64
-
-	// Width is the width of the video in pixels.
-	Width int
-
-	// Height is the height of the video in pixels.
-	Height int
-
-	// DisplayAspectRatio is the display aspect ratio of the video.
-	DisplayAspectRatio float64
-
-	// FrameRateMode is the mode of the frame rate.
-	FrameRateMode string
-
-	// FrameRate is the frame rate of the video.
-	FrameRate float64
-
-	// ColorSpace is the color space of the video.
-	ColorSpace string
-
-	// ChromaSubsampling is the chroma subsampling of the video.
-	ChromaSubsampling string
-
-	// BitDepth is the bit depth of the video.
-	BitDepth int
-
-	// ScanType is the scan type of the video.
-	ScanType string
-
-	// StreamSize is the size of the video stream in bytes.
-	StreamSize int64
-
-	// Title is the title of the video stream.
-	Title string
-
-	// Language is the language of the video stream.
-	Language string
-
-	// Default indicates whether this is the default video stream.
-	Default bool
-
-	// Forced indicates whether this stream is forced.
-	Forced bool
+// SubtitleTrack represents a simplified subtitle track
+type SubtitleTrack struct {
+	Index    string `json:"index"`
+	Format   string `json:"format"`
+	Language string `json:"language"`
+	Default  bool   `json:"default"`
 }

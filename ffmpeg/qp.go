@@ -234,88 +234,99 @@ func (qa *QPAnalyzer) processQPOutput(ctx context.Context, stderr io.Reader, res
 		default:
 			line := scanner.Text()
 
-			// Check for frame type line - this indicates a new frame
-			frameTypeMatch := frameTypeRegex.FindStringSubmatch(line)
-			if frameTypeMatch != nil {
-				// Before starting a new frame, finalize any existing frame
-				if currentFrame != nil && len(frameQPMap) > 0 {
-					// Try to send the existing frame
-					lastGoodFrame = qa.finalizeAndSendFrame(ctx, currentFrame, frameQPMap, resultCh, lastGoodFrame)
-					frameQPMap = make(map[string]map[int][]int) // Clear for next frame
-				}
+			// Process line based on its content
+			if qa.isNewFrameLine(line, frameTypeRegex) {
+				// Handle new frame
+				lastGoodFrame = qa.handleNewFrame(ctx, currentFrame, frameQPMap, resultCh, lastGoodFrame)
 
+				// Update frame info
 				frameNumber++
-				framePointer := frameTypeMatch[1]
-				frameType := strings.ToUpper(frameTypeMatch[2])
+				frameMatches := frameTypeRegex.FindStringSubmatch(line)
+				framePointer := frameMatches[1]
+				frameType := strings.ToUpper(frameMatches[2])
 
-				// Try to extract the actual frame number from the line if available
-				originalFrameNumber := frameNumber
-				frameNumMatch := frameNumRegex.FindStringSubmatch(line)
-				if frameNumMatch != nil {
-					if num, err := strconv.Atoi(frameNumMatch[1]); err == nil {
-						originalFrameNumber = num
-					}
-				}
-
-				// Initialize QP map for this frame if needed
-				if _, exists := frameQPMap[framePointer]; !exists {
-					frameQPMap[framePointer] = make(map[int][]int)
-				}
-
-				// Create a new frame
+				// Initialize the current frame
 				currentFrame = &FrameQP{
-					FrameNumber:         originalFrameNumber, // Use parsed frame number when available
-					OriginalFrameNumber: originalFrameNumber,
+					FrameNumber:         frameNumber,
+					OriginalFrameNumber: frameNumber, // Default to sequential number
 					FrameType:           frameType,
 					CodecType:           qa.detectCodecType(framePointer),
-					QPValues:            []int{},
-				}
-				continue
-			}
-
-			// Skip header lines that show column widths
-			if strings.Contains(line, "128") && strings.Contains(line, "256") && strings.Contains(line, "384") {
-				continue
-			}
-
-			// Check for QP values line
-			qpLineMatch := qpLineRegex.FindStringSubmatch(line)
-			if qpLineMatch != nil && currentFrame != nil {
-				framePointer := qpLineMatch[1]
-				offsetStr := qpLineMatch[2]
-				qpDataStr := qpLineMatch[3]
-
-				// Parse the offset
-				offset, err := strconv.Atoi(offsetStr)
-				if err != nil {
-					continue
 				}
 
-				// Parse QP values from this row
-				qpValues := qa.parseQPString(qpDataStr)
-
-				if len(qpValues) > 0 {
-					// Store the QP values for this offset
-					if _, exists := frameQPMap[framePointer]; !exists {
-						frameQPMap[framePointer] = make(map[int][]int)
+				// Check for frame number in the line
+				if frameNumMatches := frameNumRegex.FindStringSubmatch(line); len(frameNumMatches) > 1 {
+					if origNum, err := strconv.Atoi(frameNumMatches[1]); err == nil {
+						currentFrame.OriginalFrameNumber = origNum
 					}
-					frameQPMap[framePointer][offset] = qpValues
 				}
+
+				// Initialize map for this frame if needed
+				if _, ok := frameQPMap[framePointer]; !ok {
+					frameQPMap[framePointer] = make(map[int][]int)
+				}
+			} else if qa.isQPDataLine(line, qpLineRegex) {
+				// Handle QP data line
+				qa.handleQPDataLine(line, qpLineRegex, frameQPMap)
 			}
 		}
 	}
 
-	// Finalize any remaining frame
+	// Process any remaining frame
 	if currentFrame != nil && len(frameQPMap) > 0 {
-		qa.finalizeAndSendFrame(ctx, currentFrame, frameQPMap, resultCh, lastGoodFrame)
-	}
-
-	// Check for scanner errors
-	if err := scanner.Err(); err != nil {
-		return fmt.Errorf("error reading FFmpeg output: %v", err)
+		_ = qa.finalizeAndSendFrame(ctx, currentFrame, frameQPMap, resultCh, lastGoodFrame)
 	}
 
 	return nil
+}
+
+// isNewFrameLine checks if a line indicates the start of a new frame
+func (qa *QPAnalyzer) isNewFrameLine(line string, frameTypeRegex *regexp.Regexp) bool {
+	return frameTypeRegex.MatchString(line) && strings.Contains(line, "New frame, type:")
+}
+
+// isQPDataLine checks if a line contains QP data
+func (qa *QPAnalyzer) isQPDataLine(line string, qpLineRegex *regexp.Regexp) bool {
+	return qpLineRegex.MatchString(line)
+}
+
+// handleNewFrame processes the end of a frame and prepares for a new one
+func (qa *QPAnalyzer) handleNewFrame(
+	ctx context.Context,
+	currentFrame *FrameQP,
+	frameQPMap map[string]map[int][]int,
+	resultCh chan<- FrameQP,
+	lastGoodFrame *FrameQP,
+) *FrameQP {
+	// Before starting a new frame, finalize any existing frame
+	if currentFrame != nil && len(frameQPMap) > 0 {
+		// Try to send the existing frame
+		return qa.finalizeAndSendFrame(ctx, currentFrame, frameQPMap, resultCh, lastGoodFrame)
+	}
+	return lastGoodFrame
+}
+
+// handleQPDataLine processes a line containing QP data
+func (qa *QPAnalyzer) handleQPDataLine(
+	line string,
+	qpLineRegex *regexp.Regexp,
+	frameQPMap map[string]map[int][]int,
+) {
+	matches := qpLineRegex.FindStringSubmatch(line)
+	if len(matches) >= 4 {
+		framePointer := matches[1]
+		offset, err := strconv.Atoi(matches[2])
+		if err != nil {
+			return // Skip if offset isn't a valid number
+		}
+
+		// Parse QP values
+		qpValues := qa.parseQPString(matches[3])
+
+		// Store values in the map
+		if frameMap, ok := frameQPMap[framePointer]; ok {
+			frameMap[offset] = qpValues
+		}
+	}
 }
 
 // parseQPString parses the QP values from a string.

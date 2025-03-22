@@ -146,6 +146,7 @@ This project uses GitHub Actions for continuous integration with the following c
 - **Code Coverage**: Reports test coverage to Codecov
 - **Static Analysis**: Uses golangci-lint to check for common issues
 - **Dependency Scanning**: Checks for vulnerable dependencies using govulncheck and deps.dev
+- **Cyclomatic Complexity**: Ensures that no function exceeds a complexity of 15
 
 To run the same checks locally:
 
@@ -157,10 +158,32 @@ go test -v -race -coverprofile=coverage.txt -covermode=atomic ./...
 go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
 golangci-lint run
 
+# Check cyclomatic complexity
+go install github.com/fzipp/gocyclo/cmd/gocyclo@latest
+~/go/bin/gocyclo -over 15 .
+
 # Check for vulnerabilities
 go install golang.org/x/vuln/cmd/govulncheck@latest
 govulncheck ./...
 ```
+
+### Code Quality Standards
+
+#### Cyclomatic Complexity
+
+FrameHound enforces a maximum cyclomatic complexity of 15 for all functions. This helps ensure that:
+
+- Code remains maintainable and readable
+- Functions have a single, clear responsibility
+- Testing is more straightforward
+- Cognitive load is reduced when understanding the codebase
+
+Exceeding this limit will cause CI builds to fail. If you need to refactor a complex function:
+
+1. Break it down into smaller, focused helper functions
+2. Use strategy pattern to handle different cases
+3. Replace nested conditionals with early returns
+4. Consider using more descriptive variable names for clarity
 
 ### Contributing
 
@@ -172,7 +195,7 @@ govulncheck ./...
 
 ## License
 
-This project is licensed under the MIT License - see the LICENSE file for details.
+This project is licensed under the GNU General Public License v3.0 - see the [LICENSE](LICENSE) file for details.
 
 ## Acknowledgements
 

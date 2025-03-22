@@ -13,8 +13,9 @@ linters:
     - revive       # Fast, configurable, extensible, flexible, and beautiful linter for Go
     - unconvert    # Remove unnecessary type conversions
     - unparam      # Find unused function parameters
+    - gocyclo      # Check function cyclomatic complexity
   disable:
-    - gocyclo      # Disable cyclomatic complexity checks entirely
+    - lll          # Line length linter
 
 linters-settings:
   revive:
@@ -22,6 +23,9 @@ linters-settings:
       - name: exported
         severity: warning
         disabled: false
+  gocyclo:
+    # Minimal code complexity to report, 15 by default
+    min-complexity: 15
 
 issues:
   exclude-rules:

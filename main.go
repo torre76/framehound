@@ -88,7 +88,7 @@ func printContainerInfo(info *ffmpeg.ContainerInfo) {
 			regularStyle.Printf("  🔈 Channels: ")
 			valueStyle.Printf("%d (%s)\n", stream.Channels, stream.ChannelLayout)
 			regularStyle.Printf("  📊 Sample rate: ")
-			valueStyle.Printf("%.0f Hz\n", stream.SamplingRate)
+			valueStyle.Printf("%d Hz\n", stream.SamplingRate)
 			regularStyle.Printf("  ⚡ Bit rate: ")
 			valueStyle.Printf("%.2f Kbps\n", float64(stream.BitRate)/1000)
 			regularStyle.Printf("  🌐 Language: ")
@@ -314,7 +314,7 @@ func saveContainerInfo(info *ffmpeg.ContainerInfo, outputDir string) error {
 			output += fmt.Sprintf("Stream #%d:\n", i)
 			output += fmt.Sprintf("  🎚️ Codec: %s\n", stream.Format)
 			output += fmt.Sprintf("  🔈 Channels: %d (%s)\n", stream.Channels, stream.ChannelLayout)
-			output += fmt.Sprintf("  📊 Sample rate: %.0f Hz\n", stream.SamplingRate)
+			output += fmt.Sprintf("  📊 Sample rate: %d Hz\n", stream.SamplingRate)
 			output += fmt.Sprintf("  ⚡ Bit rate: %.2f Kbps\n", float64(stream.BitRate)/1000)
 			output += fmt.Sprintf("  🌐 Language: %s\n", stream.Language)
 		}
