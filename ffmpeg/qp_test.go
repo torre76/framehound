@@ -210,8 +210,7 @@ func (s *QPAnalyzerTestSuite) TestCalculateAverageQP() {
 	}
 }
 
-// TestNormalizeCodecType tests the normalizeCodecType private method.
-// It verifies that the method correctly normalizes different codec type variants.
+// TestNormalizeCodecType tests the NormalizeCodecType method
 func (s *QPAnalyzerTestSuite) TestNormalizeCodecType() {
 	testCases := []struct {
 		name          string
@@ -227,6 +226,11 @@ func (s *QPAnalyzerTestSuite) TestNormalizeCodecType() {
 			name:          "H264_uppercase",
 			codecType:     "H264",
 			expectedCodec: "h264",
+		},
+		{
+			name:          "avc",
+			codecType:     "avc",
+			expectedCodec: "avc", // Not recognized as H264
 		},
 		{
 			name:          "xvid",
@@ -247,7 +251,7 @@ func (s *QPAnalyzerTestSuite) TestNormalizeCodecType() {
 
 	for _, tc := range testCases {
 		s.Run(tc.name, func() {
-			normalized := s.analyzer.normalizeCodecType(tc.codecType)
+			normalized := s.analyzer.NormalizeCodecType(tc.codecType)
 			assert.Equal(s.T(), tc.expectedCodec, normalized, "Codec type normalization incorrect")
 		})
 	}
@@ -304,7 +308,7 @@ func (s *QPAnalyzerTestSuite) TestParseQPString() {
 	}
 }
 
-// TestDetectCodecType tests the detectCodecType method
+// TestDetectCodecType tests the DetectCodecType method
 func (s *QPAnalyzerTestSuite) TestDetectCodecType() {
 	testCases := []struct {
 		name          string
@@ -340,7 +344,7 @@ func (s *QPAnalyzerTestSuite) TestDetectCodecType() {
 
 	for _, tc := range testCases {
 		s.Run(tc.name, func() {
-			codec := s.analyzer.detectCodecType(tc.framePointer)
+			codec := s.analyzer.DetectCodecType(tc.framePointer)
 			assert.Equal(s.T(), tc.expectedCodec, codec, "Codec detection incorrect")
 		})
 	}

@@ -156,6 +156,29 @@ type FrameBitrateInfo struct {
 	DTS int64 `json:"dts"`
 }
 
+// FrameCU represents CU (Coding Unit) information for a video frame in HEVC.
+// CU sizes determine the subdivision of frames into coding units for compression.
+// Larger CU sizes generally indicate areas with less detail or motion.
+type FrameCU struct {
+	// FrameNumber is the sequential number of the frame in the output
+	FrameNumber int
+
+	// OriginalFrameNumber is the actual frame number in the source
+	OriginalFrameNumber int
+
+	// FrameType is the type of frame (I, P, B)
+	FrameType string
+
+	// CodecType is the video codec (hevc, h265)
+	CodecType string
+
+	// CUSizes contains all the CU sizes (width*height) for this frame
+	CUSizes []int
+
+	// AverageCUSize is the average of all CU sizes for this frame
+	AverageCUSize float64
+}
+
 // FrameQP represents QP (Quantization Parameter) information for a video frame.
 // QP values determine the quality of the encoded video - lower values mean higher quality
 // and higher bitrate, while higher values mean lower quality and lower bitrate.
@@ -230,6 +253,23 @@ type QPAnalyzer struct {
 
 	// SupportsQPReading indicates whether the installed FFmpeg supports QP reading
 	SupportsQPReading bool
+
+	// prober is used to check video codec compatibility
+	prober *Prober
+
+	// mutex protects concurrent access to the analyzer
+	mutex sync.Mutex
+}
+
+// CUAnalyzer analyzes the Coding Unit (CU) sizes of HEVC video frames.
+// CU sizes indicate how the frame is partitioned for encoding, with larger CUs typically
+// used for homogeneous areas and smaller CUs for detailed regions.
+type CUAnalyzer struct {
+	// FFmpegPath is the path to the FFmpeg executable
+	FFmpegPath string
+
+	// SupportsCUReading indicates whether the installed FFmpeg supports CU reading for HEVC
+	SupportsCUReading bool
 
 	// prober is used to check video codec compatibility
 	prober *Prober

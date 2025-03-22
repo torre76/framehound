@@ -77,34 +77,30 @@ func (qa *QPAnalyzer) checkCodecCompatibility(filePath string) error {
 func (qa *QPAnalyzer) collectFrameQPValues(offsetMap map[int][]int) []int {
 	var allQPValues []int
 
-	// Get sorted offsets to process them in order
-	offsets := make([]int, 0, len(offsetMap))
-	for offset := range offsetMap {
-		offsets = append(offsets, offset)
-	}
-
-	// Collect all QP values
-	for _, offset := range offsets {
-		allQPValues = append(allQPValues, offsetMap[offset]...)
+	// Process all offsets to extract QP values
+	for _, qpValues := range offsetMap {
+		allQPValues = append(allQPValues, qpValues...)
 	}
 
 	return allQPValues
 }
 
-// detectCodecType tries to determine the codec type from the frame pointer string.
+// DetectCodecType tries to determine the codec type from the frame pointer string.
 // The frame pointer typically includes the codec info like [h264 @ 0x12345678].
-func (qa *QPAnalyzer) detectCodecType(framePointer string) string {
-	codec := "unknown"
+// This method is primarily used for testing purposes.
+func (qa *QPAnalyzer) DetectCodecType(framePointer string) string {
+	framePointer = strings.ToLower(framePointer)
 
+	// Check for common codec identifiers
 	if strings.Contains(framePointer, "h264") {
-		codec = "h264"
+		return "h264"
 	} else if strings.Contains(framePointer, "xvid") {
-		codec = "xvid"
+		return "xvid"
 	} else if strings.Contains(framePointer, "divx") {
-		codec = "divx"
+		return "divx"
 	}
 
-	return codec
+	return "unknown"
 }
 
 // finalizeAndSendFrame collects QP values for a frame and sends it to the result channel.
@@ -188,9 +184,10 @@ func (qa *QPAnalyzer) finalizeAndSendFrame(ctx context.Context, frame *FrameQP, 
 	return lastGoodFrame
 }
 
-// normalizeCodecType normalizes codec type names to a standard format.
+// NormalizeCodecType normalizes codec type names to a standard format.
 // For example, it converts variants of H264 to the standardized "h264".
-func (qa *QPAnalyzer) normalizeCodecType(codecType string) string {
+// This method is primarily used for testing purposes.
+func (qa *QPAnalyzer) NormalizeCodecType(codecType string) string {
 	codecType = strings.ToLower(codecType)
 
 	// Common codec type variations
@@ -250,7 +247,7 @@ func (qa *QPAnalyzer) processQPOutput(ctx context.Context, stderr io.Reader, res
 					FrameNumber:         frameNumber,
 					OriginalFrameNumber: frameNumber, // Default to sequential number
 					FrameType:           frameType,
-					CodecType:           qa.detectCodecType(framePointer),
+					CodecType:           qa.DetectCodecType(framePointer),
 				}
 
 				// Check for frame number in the line
