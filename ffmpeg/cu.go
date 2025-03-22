@@ -178,74 +178,21 @@ func (ca *CUAnalyzer) processCUOutput(ctx context.Context, reader io.Reader, res
 			return ctx.Err()
 		default:
 			line := scanner.Text()
-
-			// Process line based on its content
-			if frameTypeMatches := frameTypeRegex.FindStringSubmatch(line); frameTypeMatches != nil {
-				// Handle NAL unit lines for detecting frame boundaries
-				codecType := frameTypeMatches[1]
-				framePointer := frameTypeMatches[2]
-				_ = frameTypeMatches[3] // nalType (not used after refactoring)
-				nalTypeName := frameTypeMatches[4]
-
-				// Check if this is a new frame (by NAL unit type)
-				if ca.isNewFrameNAL(nalTypeName) {
-					// Handle new frame
-					lastGoodFrame = ca.finalizeAndSendFrame(ctx, currentFrame, frameCUMap, resultCh, lastGoodFrame)
-
-					// Initialize the current frame
-					frameNumber++
-					currentFrame = &FrameCU{
-						FrameNumber:         frameNumber,
-						OriginalFrameNumber: frameNumber, // Default to sequential number
-						FrameType:           ca.nalTypeToFrameType(nalTypeName),
-						CodecType:           ca.normalizeCodecType(codecType),
-					}
-
-					// Check for frame number in preceding lines
-					if frameNumMatches := frameNumRegex.FindStringSubmatch(line); len(frameNumMatches) > 1 {
-						if origNum, err := strconv.Atoi(frameNumMatches[1]); err == nil {
-							currentFrame.OriginalFrameNumber = origNum
-						}
-					}
-
-					// Initialize map for this frame if needed
-					if _, ok := frameCUMap[framePointer]; !ok {
-						frameCUMap[framePointer] = make(map[int][]int)
-					}
-				}
-			} else if cuMatches := cuSizeRegex.FindStringSubmatch(line); cuMatches != nil {
-				// Process CU size information
-				framePointer := cuMatches[2]
-				width, _ := strconv.Atoi(cuMatches[3])
-				height, _ := strconv.Atoi(cuMatches[4])
-				posX, _ := strconv.Atoi(cuMatches[5])
-				posY, _ := strconv.Atoi(cuMatches[6])
-				// cuType not used currently, but could be used for future enhancements
-				// cuType, _ := strconv.Atoi(cuMatches[7])
-
-				// Calculate CU size (area)
-				cuSize := width * height
-
-				// Store the CU size in the frame map
-				// Using position as offset
-				offset := posY*1000 + posX // Create a unique key based on position
-				if frameMap, ok := frameCUMap[framePointer]; ok {
-					if _, ok := frameMap[offset]; !ok {
-						frameMap[offset] = make([]int, 0)
-					}
-					frameMap[offset] = append(frameMap[offset], cuSize)
-				}
-			} else if strings.Contains(line, "Decoded frame with POC") {
-				// Store POC (Picture Order Count) information for later use
-				// This is often in a line before the actual frame NAL unit
-				if frameNumMatches := frameNumRegex.FindStringSubmatch(line); len(frameNumMatches) > 1 {
-					// Store this POC number for the next frame
-					if origNum, err := strconv.Atoi(frameNumMatches[1]); err == nil {
-						if currentFrame != nil {
-							currentFrame.OriginalFrameNumber = origNum
-						}
-					}
-				}
+			var err error
+			currentFrame, lastGoodFrame, err = ca.processOutputLine(
+				line,
+				frameTypeRegex,
+				frameNumRegex,
+				cuSizeRegex,
+				ctx,
+				currentFrame,
+				lastGoodFrame,
+				&frameNumber,
+				frameCUMap,
+				resultCh,
+			)
+			if err != nil {
+				return err
 			}
 		}
 	}
@@ -256,6 +203,133 @@ func (ca *CUAnalyzer) processCUOutput(ctx context.Context, reader io.Reader, res
 	}
 
 	return nil
+}
+
+// processOutputLine handles a single line of FFmpeg debug output.
+// It identifies the type of line and processes it accordingly.
+func (ca *CUAnalyzer) processOutputLine(
+	line string,
+	frameTypeRegex *regexp.Regexp,
+	frameNumRegex *regexp.Regexp,
+	cuSizeRegex *regexp.Regexp,
+	ctx context.Context,
+	currentFrame *FrameCU,
+	lastGoodFrame *FrameCU,
+	frameNumber *int,
+	frameCUMap map[string]map[int][]int,
+	resultCh chan<- FrameCU,
+) (*FrameCU, *FrameCU, error) {
+	// Check if this is a NAL unit line (potentially a new frame)
+	if frameTypeMatches := frameTypeRegex.FindStringSubmatch(line); frameTypeMatches != nil {
+		return ca.processNALUnitLine(frameTypeMatches, frameNumRegex, line, ctx, currentFrame, lastGoodFrame, frameNumber, frameCUMap, resultCh)
+	}
+
+	// Check if this is a CU size line
+	if cuMatches := cuSizeRegex.FindStringSubmatch(line); cuMatches != nil {
+		ca.processCUSizeLine(cuMatches, frameCUMap)
+		return currentFrame, lastGoodFrame, nil
+	}
+
+	// Check if this is a frame POC line
+	if strings.Contains(line, "Decoded frame with POC") {
+		ca.processPOCLine(line, frameNumRegex, currentFrame)
+	}
+
+	return currentFrame, lastGoodFrame, nil
+}
+
+// processNALUnitLine handles a line containing NAL unit information.
+// It detects frame boundaries and creates new frames as needed.
+func (ca *CUAnalyzer) processNALUnitLine(
+	frameTypeMatches []string,
+	frameNumRegex *regexp.Regexp,
+	line string,
+	ctx context.Context,
+	currentFrame *FrameCU,
+	lastGoodFrame *FrameCU,
+	frameNumber *int,
+	frameCUMap map[string]map[int][]int,
+	resultCh chan<- FrameCU,
+) (*FrameCU, *FrameCU, error) {
+	codecType := frameTypeMatches[1]
+	framePointer := frameTypeMatches[2]
+	nalTypeName := frameTypeMatches[4]
+
+	// Check if this is a new frame (by NAL unit type)
+	if !ca.isNewFrameNAL(nalTypeName) {
+		return currentFrame, lastGoodFrame, nil
+	}
+
+	// Handle new frame
+	lastGoodFrame = ca.finalizeAndSendFrame(ctx, currentFrame, frameCUMap, resultCh, lastGoodFrame)
+
+	// Initialize the current frame
+	*frameNumber++
+	currentFrame = &FrameCU{
+		FrameNumber:         *frameNumber,
+		OriginalFrameNumber: *frameNumber, // Default to sequential number
+		FrameType:           ca.nalTypeToFrameType(nalTypeName),
+		CodecType:           ca.normalizeCodecType(codecType),
+	}
+
+	// Check for frame number in preceding lines
+	if frameNumMatches := frameNumRegex.FindStringSubmatch(line); len(frameNumMatches) > 1 {
+		if origNum, err := strconv.Atoi(frameNumMatches[1]); err == nil {
+			currentFrame.OriginalFrameNumber = origNum
+		}
+	}
+
+	// Initialize map for this frame if needed
+	if _, ok := frameCUMap[framePointer]; !ok {
+		frameCUMap[framePointer] = make(map[int][]int)
+	}
+
+	return currentFrame, lastGoodFrame, nil
+}
+
+// processCUSizeLine handles a line containing CU size information.
+// It extracts the CU size and adds it to the frame's CU data.
+func (ca *CUAnalyzer) processCUSizeLine(
+	cuMatches []string,
+	frameCUMap map[string]map[int][]int,
+) {
+	framePointer := cuMatches[2]
+	width, _ := strconv.Atoi(cuMatches[3])
+	height, _ := strconv.Atoi(cuMatches[4])
+	posX, _ := strconv.Atoi(cuMatches[5])
+	posY, _ := strconv.Atoi(cuMatches[6])
+	// cuType not used currently, but could be used for future enhancements
+	// cuType, _ := strconv.Atoi(cuMatches[7])
+
+	// Calculate CU size (area)
+	cuSize := width * height
+
+	// Store the CU size in the frame map
+	// Using position as offset
+	offset := posY*1000 + posX // Create a unique key based on position
+	if frameMap, ok := frameCUMap[framePointer]; ok {
+		if _, ok := frameMap[offset]; !ok {
+			frameMap[offset] = make([]int, 0)
+		}
+		frameMap[offset] = append(frameMap[offset], cuSize)
+	}
+}
+
+// processPOCLine handles a line containing Picture Order Count information.
+// It extracts the POC and updates the current frame's original frame number.
+func (ca *CUAnalyzer) processPOCLine(
+	line string,
+	frameNumRegex *regexp.Regexp,
+	currentFrame *FrameCU,
+) {
+	if frameNumMatches := frameNumRegex.FindStringSubmatch(line); len(frameNumMatches) > 1 {
+		// Store this POC number for the next frame
+		if origNum, err := strconv.Atoi(frameNumMatches[1]); err == nil {
+			if currentFrame != nil {
+				currentFrame.OriginalFrameNumber = origNum
+			}
+		}
+	}
 }
 
 // isNewFrameNAL checks if a NAL unit type indicates the start of a new frame
