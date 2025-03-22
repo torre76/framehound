@@ -1,4 +1,6 @@
 // Package ffmpeg provides functionality for detecting and working with FFmpeg.
+// It offers tools for analyzing video files, extracting media information,
+// and processing frame-level data.
 package ffmpeg
 
 import (
@@ -9,28 +11,65 @@ import (
 	"strings"
 )
 
+// Private constants (alphabetical)
+// None currently defined
+
+// Public constants (alphabetical)
+// None currently defined
+
+// Private variables (alphabetical)
+// None currently defined
+
+// Public variables (alphabetical)
+// None currently defined
+
+// Private functions (alphabetical)
+// None currently defined
+
+// Public functions (alphabetical)
+
+// NewBitrateAnalyzer creates a new BitrateAnalyzer instance with the provided FFmpeg information.
+// It validates that FFmpeg is available and properly installed on the system before
+// creating the analyzer. If FFmpeg is not available, an error is returned.
+func NewBitrateAnalyzer(ffmpegInfo *FFmpegInfo) (*BitrateAnalyzer, error) {
+	if ffmpegInfo == nil || !ffmpegInfo.Installed {
+		return nil, fmt.Errorf("ffmpeg not available")
+	}
+
+	// Derive ffprobe path from ffmpeg path
+	ffprobePath := strings.Replace(ffmpegInfo.Path, "ffmpeg", "ffprobe", 1)
+
+	return &BitrateAnalyzer{
+		FFprobePath: ffprobePath,
+	}, nil
+}
+
 // Private methods (alphabetical)
-// None
+// None currently defined
 
 // Public methods (alphabetical)
 
-// Analyze analyzes the bitrate of each frame in the video file and sends the results
-// through the provided channel. It returns an error if the analysis fails.
-// The context can be used to cancel the analysis.
+// Analyze processes a video file to extract frame-by-frame bitrate information.
+// It examines each video frame, calculating its bitrate and collecting metadata such as
+// frame type and timestamps. Results are streamed through the provided channel to
+// efficiently handle large video files without excessive memory usage.
 //
-// The function processes frames one by one and sends FrameBitrateInfo objects through
-// the resultCh channel. The caller should read from this channel until it's closed
-// or the context is canceled.
+// The context parameter allows for cancellation of long-running operations.
+// The filePath parameter specifies the video file to analyze.
+// The resultCh channel receives FrameBitrateInfo objects for each video frame.
 //
-// This method is designed to handle large video files efficiently by streaming
-// the results rather than collecting them all in memory.
+// This method is thread-safe and can be called concurrently for different files.
 func (b *BitrateAnalyzer) Analyze(ctx context.Context, filePath string, resultCh chan<- FrameBitrateInfo) error {
 	b.mutex.Lock()
 	defer b.mutex.Unlock()
 
+	// Create a child context with cancellation so we can stop all operations
+	childCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
 	// Create the FFprobe command to extract frame information
 	cmd := exec.CommandContext(
-		ctx,
+		childCtx,
 		b.FFprobePath,
 		"-v", "quiet",
 		"-select_streams", "v:0", // Select first video stream
@@ -50,109 +89,126 @@ func (b *BitrateAnalyzer) Analyze(ctx context.Context, filePath string, resultCh
 		return fmt.Errorf("failed to start FFprobe: %w", err)
 	}
 
-	// Start a goroutine to process frames
-	go func() {
-		defer close(resultCh)
+	// Set up done channel and error for processing
+	done := make(chan struct{})
+	var processErr error
 
-		// Create a JSON decoder
+	// Process the data in a goroutine
+	go func() {
+		defer close(done)
+
+		// Create a decoder for streaming JSON
 		decoder := json.NewDecoder(stdout)
 
-		// Read the opening object
-		_, err := decoder.Token()
+		// Look for the start of frames array
+		_, err := decoder.Token() // We don't use the token value
 		if err != nil {
-			// Error handling, close channel and return
+			processErr = fmt.Errorf("error parsing JSON token: %w", err)
+			cancel() // Cancel the command
 			return
 		}
 
-		// Read "frames" key
-		t, err := decoder.Token()
+		fieldName, err := decoder.Token()
 		if err != nil {
-			// Error handling, close channel and return
-			return
-		}
-		if t != "frames" {
-			// Expected 'frames' key but got something else
+			processErr = fmt.Errorf("error parsing JSON field name: %w", err)
+			cancel() // Cancel the command
 			return
 		}
 
-		// Read opening array bracket
-		_, err = decoder.Token()
+		if fieldName != "frames" {
+			processErr = fmt.Errorf("unexpected JSON field: %v, expected 'frames'", fieldName)
+			cancel() // Cancel the command
+			return
+		}
+
+		// Expect array start
+		_, err = decoder.Token() // We don't use the array token value
 		if err != nil {
-			// Error handling, close channel and return
+			processErr = fmt.Errorf("error parsing JSON array start: %w", err)
+			cancel() // Cancel the command
 			return
 		}
 
-		// Process each frame
-		frameNumber := 1 // Start from 1 instead of 0
-
+		// Process frames
+		frameNumber := 0
 		for decoder.More() {
-			// Check if the context is canceled
-			if ctx.Err() != nil {
+			// Check if context is canceled
+			select {
+			case <-childCtx.Done():
+				processErr = childCtx.Err()
+				return
+			default:
+				// Continue processing
+			}
+
+			var frameInfo ffprobeFrameInfo
+			if err := decoder.Decode(&frameInfo); err != nil {
+				processErr = fmt.Errorf("error decoding frame info: %w", err)
+				cancel() // Cancel the command
 				return
 			}
 
-			// Decode frame info
-			var frameInfo ffprobeFrameInfo
-			if err := decoder.Decode(&frameInfo); err != nil {
-				// Skip this frame and continue with the next one
-				continue
-			}
-
-			// Skip non-video frames
+			// Check if this is a video frame (media_type == "video")
 			if frameInfo.MediaType != "video" {
 				continue
 			}
 
-			// Calculate bitrate from pkt_size (which is in bits)
-			bitrate, _ := frameInfo.PktSize.Int64()
-			bitrate *= 8 // Convert bytes to bits
+			// Extract frame size in bits
+			pktSize, err := frameInfo.PktSize.Int64()
+			if err != nil {
+				continue // Skip frames with invalid size
+			}
 
-			// Extract PTS and DTS
+			// Extract PTS (Presentation Timestamp)
 			pts, _ := frameInfo.PktPts.Int64()
+
+			// Extract DTS (Decoding Timestamp)
 			dts, _ := frameInfo.PktDts.Int64()
 
-			// Create a FrameBitrateInfo
-			frameBI := FrameBitrateInfo{
+			// Determine frame type from picture type
+			frameType := strings.ToUpper(frameInfo.PictType)
+			if frameType == "" {
+				frameType = "?"
+			}
+
+			// Create frame bitrate info
+			info := FrameBitrateInfo{
 				FrameNumber: frameNumber,
-				FrameType:   frameInfo.PictType,
-				Bitrate:     bitrate,
+				FrameType:   frameType,
+				Bitrate:     pktSize * 8, // Convert bytes to bits
 				PTS:         pts,
 				DTS:         dts,
 			}
 
 			// Send to the channel
 			select {
-			case resultCh <- frameBI:
-				// Frame sent successfully
-			case <-ctx.Done():
-				// Context was canceled
+			case <-childCtx.Done():
+				processErr = childCtx.Err()
 				return
+			case resultCh <- info:
+				// Successfully sent
 			}
 
 			frameNumber++
 		}
-
-		// Wait for the command to finish
-		_ = cmd.Wait()
 	}()
 
-	return nil
-}
-
-// Public functions (alphabetical)
-
-// NewBitrateAnalyzer creates a new BitrateAnalyzer instance.
-// It requires a valid FFmpegInfo object with FFmpeg installed.
-// Returns an error if FFmpeg is not installed or the info is nil.
-func NewBitrateAnalyzer(ffmpegInfo *FFmpegInfo) (*BitrateAnalyzer, error) {
-	if ffmpegInfo == nil || !ffmpegInfo.Installed {
-		return nil, fmt.Errorf("FFmpeg is not installed")
+	// Wait for completion or timeout
+	select {
+	case <-done:
+		// Normal completion
+		if processErr != nil {
+			return processErr
+		}
+		err := cmd.Wait()
+		if err != nil && ctx.Err() == nil { // Only return command error if not due to cancellation
+			return fmt.Errorf("ffprobe command failed: %w", err)
+		}
+		return ctx.Err() // Return context error if present, nil otherwise
+	case <-ctx.Done():
+		// Context cancelled or timed out
+		cancel() // Make sure child context is cancelled
+		<-done   // Wait for processing goroutine to complete
+		return ctx.Err()
 	}
-
-	// Replace ffmpeg with ffprobe in the path
-	ffprobePath := strings.Replace(ffmpegInfo.Path, "ffmpeg", "ffprobe", 1)
-
-	return &BitrateAnalyzer{
-		FFprobePath: ffprobePath,
-	}, nil
 }

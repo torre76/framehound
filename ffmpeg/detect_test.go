@@ -103,7 +103,7 @@ func (s *FFmpegTestSuite) TestExtractVersion() {
 
 	for _, tc := range testCases {
 		s.Run(tc.name, func() {
-			result := extractVersion(tc.input)
+			result, _, _ := extractVersion(tc.input)
 			assert.Equal(s.T(), tc.expected, result)
 		})
 	}
@@ -112,58 +112,38 @@ func (s *FFmpegTestSuite) TestExtractVersion() {
 // TestGetCommonInstallPaths tests the getCommonInstallPaths function to ensure
 // it returns appropriate installation paths for different operating systems.
 func (s *FFmpegTestSuite) TestGetCommonInstallPaths() {
-	// Test for Windows
-	if runtime.GOOS == "windows" {
-		paths := getCommonInstallPaths("ffmpeg.exe")
-		assert.NotEmpty(s.T(), paths)
+	paths := getCommonInstallPaths()
+	assert.NotEmpty(s.T(), paths)
 
-		// Check that paths use proper path joining
+	// Check that paths are appropriate for the current OS
+	if runtime.GOOS == "windows" {
+		// Check for .exe extension in Windows paths
 		for _, path := range paths {
 			assert.True(s.T(), filepath.IsAbs(path), "Path should be absolute: %s", path)
+			assert.Contains(s.T(), path, "ffmpeg.exe")
 		}
+	} else {
+		// Check for 'ffmpeg' executable in Unix paths
+		for _, path := range paths {
+			assert.True(s.T(), filepath.IsAbs(path), "Path should be absolute: %s", path)
+			assert.Contains(s.T(), path, "ffmpeg")
+		}
+	}
 
-		// Check for common Windows paths
+	// Check for common paths based on OS
+	switch runtime.GOOS {
+	case "windows":
 		programFiles := os.Getenv("ProgramFiles")
 		if programFiles != "" {
 			expectedPath := filepath.Join(programFiles, "FFmpeg", "bin", "ffmpeg.exe")
 			assert.Contains(s.T(), paths, expectedPath)
 		}
-	}
-
-	// Test for macOS
-	if runtime.GOOS == "darwin" {
-		paths := getCommonInstallPaths("ffmpeg")
-		assert.NotEmpty(s.T(), paths)
-
-		// Check that paths use proper path joining
-		for _, path := range paths {
-			assert.True(s.T(), filepath.IsAbs(path), "Path should be absolute: %s", path)
-		}
-
-		// Check for common macOS paths
+	case "darwin":
 		assert.Contains(s.T(), paths, filepath.Join("/usr", "local", "bin", "ffmpeg"))
 		assert.Contains(s.T(), paths, filepath.Join("/opt", "homebrew", "bin", "ffmpeg"))
-	}
-
-	// Test for Linux
-	if runtime.GOOS == "linux" {
-		paths := getCommonInstallPaths("ffmpeg")
-		assert.NotEmpty(s.T(), paths)
-
-		// Check that paths use proper path joining
-		for _, path := range paths {
-			assert.True(s.T(), filepath.IsAbs(path), "Path should be absolute: %s", path)
-		}
-
-		// Check for common Linux paths
+	case "linux":
 		assert.Contains(s.T(), paths, filepath.Join("/usr", "bin", "ffmpeg"))
 		assert.Contains(s.T(), paths, filepath.Join("/usr", "local", "bin", "ffmpeg"))
-	}
-
-	// Test for other OS (should still return some default paths)
-	if runtime.GOOS != "windows" && runtime.GOOS != "darwin" && runtime.GOOS != "linux" {
-		paths := getCommonInstallPaths("ffmpeg")
-		assert.NotEmpty(s.T(), paths)
 	}
 }
 

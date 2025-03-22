@@ -39,7 +39,7 @@ func (s *CUAnalyzerTestSuite) SetupSuite() {
 
 	// Create a mock prober
 	s.prober = &Prober{
-		FFprobePath: s.ffmpegInfo.Path,
+		FFmpegInfo: s.ffmpegInfo,
 	}
 
 	s.analyzer, err = NewCUAnalyzer(s.ffmpegInfo, s.prober)

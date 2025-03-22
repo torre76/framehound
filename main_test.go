@@ -117,16 +117,22 @@ func (s *MainTestSuite) TestFormatWithThousandSeparators() {
 // TestSaveContainerInfo tests the saveContainerInfo function to ensure
 // it correctly saves container information to a file.
 func (s *MainTestSuite) TestSaveContainerInfo() {
+	// Create a temporary directory for the test output
+	outputDir := filepath.Join(s.tempDir, "output")
+	err := os.MkdirAll(outputDir, 0755)
+	s.NoError(err)
+
 	// Create a test container info
 	containerInfo := &ffmpeg.ContainerInfo{
 		General: ffmpeg.GeneralInfo{
-			CompleteName:   "/path/to/test.mp4",
-			Format:         "MPEG-4",
-			FormatVersion:  "Version 2",
-			FileSize:       1234567,
-			Duration:       120.5,
-			OverallBitRate: 5000000,
-			FrameRate:      30.0,
+			Format:    "MPEG-4",
+			Size:      "1234567 bytes",
+			Duration:  "120.5 s",
+			DurationF: 120.5,
+			BitRate:   "5000000 b/s",
+			Tags: map[string]string{
+				"file_path": "/path/to/test.mp4",
+			},
 		},
 		VideoStreams: []ffmpeg.VideoStream{
 			{
@@ -134,42 +140,51 @@ func (s *MainTestSuite) TestSaveContainerInfo() {
 				FormatProfile:      "High",
 				Width:              1920,
 				Height:             1080,
-				DisplayAspectRatio: 1.778,
-				BitDepth:           8,
-				BitRate:            4000000,
+				DisplayAspectRatio: 1.78,
+				BitRate:            10000000,
 				FrameRate:          30.0,
+				BitDepth:           8,
 				ScanType:           "Progressive",
 				ColorSpace:         "YUV",
 			},
 		},
+		AudioStreams: []ffmpeg.AudioStream{
+			{
+				Format:        "AAC",
+				Channels:      2,
+				ChannelLayout: "L R",
+				SamplingRate:  48000,
+				BitRate:       192000,
+				Language:      "eng",
+			},
+		},
+		SubtitleStreams: []ffmpeg.SubtitleStream{
+			{
+				Format:   "SRT",
+				Language: "eng",
+				Title:    "English",
+			},
+		},
 	}
 
-	// Create output directory
-	outputDir := filepath.Join(s.tempDir, "container-info-test")
-	err := os.MkdirAll(outputDir, 0755)
-	require.NoError(s.T(), err)
-
-	// Call the function being tested
+	// Save the container info
 	err = saveContainerInfo(containerInfo, outputDir)
-	assert.NoError(s.T(), err)
+	s.NoError(err)
 
-	// Verify file was created
-	outputFile := filepath.Join(outputDir, "info.txt")
-	_, err = os.Stat(outputFile)
-	assert.NoError(s.T(), err)
+	// Verify that the file was created
+	infoFile := filepath.Join(outputDir, "test_info.json")
+	_, err = os.Stat(infoFile)
+	s.NoError(err)
 
-	// Read the file content
-	content, err := os.ReadFile(outputFile)
-	require.NoError(s.T(), err)
-
-	// Check content contains expected information
-	contentStr := string(content)
-	assert.Contains(s.T(), contentStr, "Container Information")
-	assert.Contains(s.T(), contentStr, "/path/to/test.mp4")
-	assert.Contains(s.T(), contentStr, "MPEG-4 Version 2")
-	assert.Contains(s.T(), contentStr, "1,234,567 bytes")
-	assert.Contains(s.T(), contentStr, "H.264 (High)")
-	assert.Contains(s.T(), contentStr, "FrameHound Version")
+	// Read the file and verify its contents
+	content, err := os.ReadFile(infoFile)
+	s.NoError(err)
+	s.Contains(string(content), "MPEG-4")
+	s.Contains(string(content), "1234567")
+	s.Contains(string(content), "120.5")
+	s.Contains(string(content), "H.264")
+	s.Contains(string(content), "1920")
+	s.Contains(string(content), "AAC")
 }
 
 // TestMainTestSuite runs the test suite.
