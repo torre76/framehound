@@ -72,11 +72,6 @@ jobs:
       with:
         version: latest
         args: --timeout=5m
-        
-    - name: Note on Cyclomatic Complexity
-      run: |
-        echo "Note: Cyclomatic complexity is checked in a separate workflow (gocyclo.yml)"
-        echo "to ensure that no function exceeds the maximum allowed complexity of 15."
 
   dependency-check:
     name: Dependency Scanning
