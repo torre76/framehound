@@ -96,6 +96,26 @@ func (s *FFmpegTestSuite) TestExtractVersion() {
 			input:    "ffmpeg Copyright (c) 2000-2022 the FFmpeg developers",
 			expected: "(c)",
 		},
+		{
+			name:     "git version format",
+			input:    "ffmpeg version n4.4.1 Copyright (c) 2000-2021 the FFmpeg developers",
+			expected: "4.4.1",
+		},
+		{
+			name:     "development version format",
+			input:    "ffmpeg version 6.1-dev-3246 Copyright (c) 2000-2023 the FFmpeg developers",
+			expected: "6.1",
+		},
+		{
+			name:     "capital letter format",
+			input:    "FFmpeg version 4.2.7 Copyright (c) 2000-2022 the FFmpeg developers",
+			expected: "4.2.7",
+		},
+		{
+			name:     "version with extra digits",
+			input:    "ffmpeg version 5.1.2.3 Copyright (c) 2000-2022 the FFmpeg developers",
+			expected: "5.1.2.3",
+		},
 	}
 
 	for _, tc := range testCases {

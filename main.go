@@ -1,12 +1,10 @@
-// Package main provides the entry point for the framehound application.
-// It analyzes video files to extract frame-by-frame bitrate information and
-// provides comprehensive container information analysis.
 package main
 
 import (
 	"context"
 	"encoding/csv"
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -15,9 +13,9 @@ import (
 	"text/tabwriter"
 	"time"
 
-	"github.com/cheggaaa/pb/v3"
 	"github.com/fatih/color"
 	"github.com/gertd/go-pluralize"
+	"github.com/schollz/progressbar/v3"
 	"github.com/torre76/framehound/ffmpeg"
 	"github.com/urfave/cli/v2"
 )
@@ -752,6 +750,52 @@ func main() {
 	}
 }
 
+// formatETA formats the estimated time of completion in a human-readable format.
+// It returns the formatted string with color formatting if ANSI codes are enabled.
+// Format: "ETA: X hours Y minutes Z seconds" (hours and minutes only displayed when > 0)
+func formatETA(seconds float64) string {
+	// Handle edge cases
+	if seconds < 0 || math.IsInf(seconds, 0) || math.IsNaN(seconds) {
+		return "[cyan][bold]ETA: unknown[reset]"
+	}
+
+	// Convert to hours, minutes, seconds
+	hours := int(seconds) / 3600
+	minutes := (int(seconds) % 3600) / 60
+	secs := int(seconds) % 60
+
+	// Build the human-readable format with conditional parts
+	var parts []string
+	if hours > 0 {
+		if hours == 1 {
+			parts = append(parts, "1 hour")
+		} else {
+			parts = append(parts, fmt.Sprintf("%d hours", hours))
+		}
+	}
+
+	if minutes > 0 {
+		if minutes == 1 {
+			parts = append(parts, "1 minute")
+		} else {
+			parts = append(parts, fmt.Sprintf("%d minutes", minutes))
+		}
+	}
+
+	// Always include seconds
+	if secs == 1 {
+		parts = append(parts, "1 second")
+	} else {
+		parts = append(parts, fmt.Sprintf("%d seconds", secs))
+	}
+
+	// Join the parts into a single string
+	etaText := strings.Join(parts, " ")
+
+	// Return with cyan bold color codes
+	return fmt.Sprintf("[cyan][bold]ETA: %s[reset]", etaText)
+}
+
 // saveBitrateCSV generates a CSV report containing frame-by-frame bitrate information.
 // It creates a csv file with frame number, frame type, and bitrate for each frame.
 // It displays a progress bar during generation to provide user feedback.
@@ -788,8 +832,62 @@ func saveBitrateCSV(filePath string, outputDir string, analyzer *ffmpeg.BitrateA
 	infoStyle.Printf("\n🔍 BITRATE ANALYSIS\n")
 	infoStyle.Printf("----------------\n\n")
 
-	// Create progress bar
-	bar := createProgressBar(estimatedFrameCount)
+	// Create the progress bar
+	description := "📈 Generating bitrate report"
+
+	// Start time for calculating ETA manually
+	startTime := time.Now()
+
+	// Create the progress bar
+	bar := progressbar.NewOptions64(
+		estimatedFrameCount,
+		progressbar.OptionSetDescription(description),
+		progressbar.OptionShowBytes(false),
+		progressbar.OptionFullWidth(),
+		progressbar.OptionClearOnFinish(),
+		progressbar.OptionSetTheme(progressbar.Theme{
+			Saucer:        "=",
+			SaucerHead:    ">",
+			SaucerPadding: "-",
+			BarStart:      "[",
+			BarEnd:        "]",
+		}),
+		progressbar.OptionSetRenderBlankState(true),
+		progressbar.OptionUseANSICodes(true),
+		progressbar.OptionEnableColorCodes(true),
+		// Explicitly disable default time displays
+		progressbar.OptionSetPredictTime(false),
+		progressbar.OptionShowElapsedTimeOnFinish(),
+		progressbar.OptionSetElapsedTime(false),
+		progressbar.OptionClearOnFinish(),
+		progressbar.OptionOnCompletion(func() {
+			// Clear the line and reset the cursor
+			fmt.Print("\033[2K\r")
+			// Add new line for spacing
+			fmt.Print("\n")
+		}),
+	)
+
+	// Start a goroutine to update the ETA in the description
+	go func() {
+		for !bar.IsFinished() {
+			current := bar.State().CurrentPercent
+			if current > 0 {
+				// Calculate estimated time
+				elapsed := time.Since(startTime).Seconds()
+				totalEstimated := elapsed / float64(current)
+				eta := totalEstimated - elapsed
+
+				// Format the ETA
+				etaFormatted := formatETA(eta)
+
+				// Update the description with a space after the description, then formatted ETA
+				newDesc := fmt.Sprintf("%s - %s -", description, etaFormatted)
+				bar.Describe(newDesc)
+			}
+			time.Sleep(500 * time.Millisecond) // Update twice per second
+		}
+	}()
 
 	// Create a WaitGroup to properly manage goroutine completion
 	var wg sync.WaitGroup
@@ -825,14 +923,10 @@ func saveBitrateCSV(filePath string, outputDir string, analyzer *ffmpeg.BitrateA
 			warningStyle := color.New(color.FgYellow)
 			warningStyle.Printf("⚠️ Frame count discrepancy: estimated %d, actual %d\n", estimatedFrameCount, actualFrameCount)
 		}
-
-		// Force the bar to complete
-		bar.SetCurrent(estimatedFrameCount)
 	}
 
-	// Finish and clear the progress bar
-	bar.Finish()
-	fmt.Println() // Add a newline for spacing
+	// Make sure bar is completed and closed (this will clear the bar)
+	_ = bar.Finish()
 
 	// Print success message with completion indicator
 	successStyle := color.New(color.FgGreen)
@@ -845,7 +939,7 @@ func saveBitrateCSV(filePath string, outputDir string, analyzer *ffmpeg.BitrateA
 
 // processFramesForCSV processes frame information from the channel and writes it to the CSV file.
 // It returns the actual frame count and any error that occurred during processing.
-func processFramesForCSV(ctx context.Context, resultCh chan ffmpeg.FrameBitrateInfo, writer *csv.Writer, bar *pb.ProgressBar, cancel context.CancelFunc) (int, error) {
+func processFramesForCSV(ctx context.Context, resultCh chan ffmpeg.FrameBitrateInfo, writer *csv.Writer, bar *progressbar.ProgressBar, cancel context.CancelFunc) (int, error) {
 	var wg sync.WaitGroup
 	wg.Add(1)
 
@@ -869,7 +963,7 @@ func processFramesForCSV(ctx context.Context, resultCh chan ffmpeg.FrameBitrateI
 				}
 
 				// Update progress bar
-				bar.Increment()
+				_ = bar.Add(1)
 
 				// Convert to CSV record
 				record := []string{
@@ -984,96 +1078,4 @@ func getEstimatedFrameCount(filePath string) (int64, error) {
 	}
 
 	return estimatedFrameCount, nil
-}
-
-// createProgressBar creates a progress bar with appropriate settings
-// for tracking frame processing progress
-func createProgressBar(estimatedFrameCount int64) *pb.ProgressBar {
-	// Create a descriptive label for the progress bar
-	description := "📈 Generating bitrate report"
-
-	// Create styles for ETA display
-	etaStyle := color.New(color.FgCyan, color.Bold)
-
-	// Create a new progress bar with the appropriate settings
-	// that will fill the entire width of the terminal
-	bar := pb.New64(estimatedFrameCount)
-
-	// Set adaptive width based on terminal size
-	bar.SetWidth(0) // Auto-width mode
-
-	// Configure to use full terminal width with consistent styling
-	bar.SetTemplateString(`{{string . "prefix"}}{{string . "message"}} {{percent .}} {{bar .}} `)
-
-	// Initial message
-	bar.Set("prefix", "")
-	bar.Set("message", description)
-
-	// Update frequency
-	bar.SetRefreshRate(time.Second / 10)
-
-	// Start the bar
-	bar.Start()
-
-	// Start a goroutine to continuously update the description with time remaining
-	go func() {
-		startTime := time.Now()
-		var lastMessage string
-
-		for !bar.IsFinished() {
-			// Only update if we have some progress
-			current := bar.Current()
-			if current > 0 && !bar.IsFinished() {
-				// Calculate remaining time based on progress so far
-				elapsedTime := time.Since(startTime).Seconds()
-				progressRatio := float64(current) / float64(estimatedFrameCount)
-
-				// Avoid division by zero
-				if progressRatio > 0 {
-					// Calculate total time and remaining time
-					totalEstimatedTime := elapsedTime / progressRatio
-					remainingTime := totalEstimatedTime - elapsedTime
-
-					// Format remaining time as a readable string
-					timeRemainingText := formatRemainingTime(remainingTime)
-
-					// Style only the ETA portion in cyan and bold
-					styledTimeRemaining := etaStyle.Sprintf("%s", timeRemainingText)
-
-					// Combine the styled ETA with a regular dash afterwards
-					message := fmt.Sprintf("%s - %s -", description, styledTimeRemaining)
-
-					// Only update if message has changed
-					if message != lastMessage {
-						bar.Set("message", message)
-						lastMessage = message
-					}
-				}
-			}
-
-			// Wait before updating again
-			time.Sleep(time.Second)
-		}
-
-		// Do not reset description when done - the bar will be finished
-		// and replaced with our completion message
-	}()
-
-	return bar
-}
-
-// formatRemainingTime converts seconds to a human-readable time format
-func formatRemainingTime(seconds float64) string {
-	if seconds > 3600 {
-		hours := int(seconds / 3600)
-		minutes := int((seconds - float64(hours)*3600) / 60)
-		return fmt.Sprintf("ETA: %dh %02dm", hours, minutes)
-	} else if seconds > 60 {
-		minutes := int(seconds / 60)
-		secs := int(seconds) % 60
-		return fmt.Sprintf("ETA: %dm %02ds", minutes, secs)
-	} else {
-		secs := int(seconds)
-		return fmt.Sprintf("ETA: %ds", secs)
-	}
 }

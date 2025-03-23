@@ -19,7 +19,7 @@ import (
 
 // ffmpegVersionRegex is used to detect FFmpeg version from version string.
 // It extracts the numeric version (e.g., 4.4.1) from FFmpeg's version output.
-var ffmpegVersionRegex = regexp.MustCompile(`version\s+(\d+\.\d+(?:\.\d+)?)`)
+var ffmpegVersionRegex = regexp.MustCompile(`(?i)(?:version|ffmpeg)\s+(?:n|\w)?(\d+\.\d+(?:\.\d+(?:\.\d+)?)?)`)
 
 // Private functions (alphabetical)
 
@@ -123,7 +123,18 @@ func parseVersionFromFirstLine(firstLine string) string {
 	if len(versionParts) > 1 {
 		remainingParts := strings.Split(versionParts[1], " ")
 		if len(remainingParts) > 0 {
-			return remainingParts[0]
+			// Extract only the version part (handle 'n' prefix and '-dev' suffix)
+			versionStr := remainingParts[0]
+
+			// Remove 'n' prefix if present (git versioning)
+			versionStr = strings.TrimPrefix(versionStr, "n")
+
+			// Remove development suffix if present (e.g., -dev-1234)
+			if idx := strings.Index(versionStr, "-dev"); idx > 0 {
+				versionStr = versionStr[:idx]
+			}
+
+			return versionStr
 		}
 	}
 
@@ -344,9 +355,24 @@ func VerifyFFmpeg(ctx context.Context) (*FFmpegInfo, error) {
 	// Extract version number
 	version := ""
 	output := out.String()
+
+	// Try to extract using regex first
 	matches := ffmpegVersionRegex.FindStringSubmatch(output)
 	if len(matches) >= 2 {
 		version = matches[1]
+	}
+
+	// If version is still empty, try fallback method by parsing the first line
+	if version == "" {
+		lines := strings.Split(output, "\n")
+		if len(lines) > 0 {
+			version = parseVersionFromFirstLine(lines[0])
+		}
+	}
+
+	// If version is still empty but we have output, use a generic version
+	if version == "" && len(output) > 0 {
+		version = "detected"
 	}
 
 	// Check if FFmpeg can provide QP information
