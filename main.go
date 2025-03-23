@@ -4,7 +4,6 @@
 package main
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -48,39 +47,27 @@ var Version = "Development Version"
 // formatWithThousandSeparators formats an integer with thousand separators.
 // It takes an int64 value and returns a string with commas separating thousands.
 func formatWithThousandSeparators(n int64) string {
-	in := strconv.FormatInt(n, 10)
-	numOfDigits := len(in)
+	// Convert the number to a string
+	inStr := strconv.FormatInt(n, 10)
+
+	// If the number is negative, handle the sign separately
+	sign := ""
 	if n < 0 {
-		numOfDigits-- // First character is the - sign (not a digit)
-	}
-	numOfCommas := (numOfDigits - 1) / 3
-
-	if numOfCommas == 0 {
-		return in
+		sign = "-"
+		inStr = inStr[1:] // Remove the negative sign for processing
 	}
 
-	var out string
-	if n < 0 {
-		in = in[1:] // Remove the - sign
-		out = "-"
-	}
-
-	offset := len(in) % 3
-	if offset > 0 {
-		out += in[:offset] + ","
-	}
-
-	for i := offset; i < len(in); i += 3 {
-		end := i + 3
-		if end > len(in) {
-			end = len(in)
+	// Add thousand separators
+	var result strings.Builder
+	for i, c := range inStr {
+		if i > 0 && (len(inStr)-i)%3 == 0 {
+			result.WriteRune(',')
 		}
-		out += in[i:end]
-		if end < len(in) {
-			out += ","
-		}
+		result.WriteRune(c)
 	}
-	return out
+
+	// Add back the sign if needed
+	return sign + result.String()
 }
 
 // printSimpleContainerSummary prints a simplified summary of the container information.
@@ -171,128 +158,23 @@ func parseBitRate(bitRateStr string) int64 {
 
 // getFrameRate extracts the frame rate from the first video stream if available.
 func getFrameRate(info *ffmpeg.ContainerInfo) float64 {
+	// Default frame rate if none found
+	frameRate := 0.0
+
+	// Get frame rate from video streams
 	if len(info.VideoStreams) > 0 {
-		return info.VideoStreams[0].FrameRate
+		// Try to find the first non-zero frame rate
+		for _, stream := range info.VideoStreams {
+			if stream.FrameRate > 0 {
+				frameRate = stream.FrameRate
+				break
+			}
+		}
 	}
-	return 0.0
+
+	return frameRate
 }
 
-// saveContainerInfo saves the container information to a JSON file in the specified directory.
-// It returns an error if the directory cannot be created or the file cannot be written.
-func saveContainerInfo(info *ffmpeg.ContainerInfo, outputDir string) error {
-	// Create the output directory if it doesn't exist
-	err := os.MkdirAll(outputDir, 0755)
-	if err != nil {
-		return fmt.Errorf("error creating output directory: %w", err)
-	}
-
-	// Determine the output filename based on the input filename
-	fileName := "container_info.json"
-	if info.General.Tags != nil {
-		if path, ok := info.General.Tags["file_path"]; ok {
-			baseName := filepath.Base(path)
-			fileName = strings.TrimSuffix(baseName, filepath.Ext(baseName)) + "_info.json"
-		}
-	}
-	outputPath := filepath.Join(outputDir, fileName)
-
-	// Create a simplified representation for JSON output
-	jsonOutput := map[string]interface{}{
-		"filename": "",
-		"format": map[string]interface{}{
-			"name":        info.General.Format,
-			"description": "", // No FormatVersion in new struct
-			"size":        info.General.Size,
-			"duration":    info.General.DurationF,
-			"bitrate":     info.General.BitRate,
-			"framerate":   0.0, // Will set from video stream if available
-		},
-		"video_streams":    []interface{}{},
-		"audio_streams":    []interface{}{},
-		"subtitle_streams": []interface{}{},
-	}
-
-	// Get filename from Tags
-	if info.General.Tags != nil {
-		if path, ok := info.General.Tags["file_path"]; ok {
-			jsonOutput["filename"] = path
-		}
-	}
-
-	// Get frame rate from first video stream if available
-	if len(info.VideoStreams) > 0 {
-		jsonOutput["format"].(map[string]interface{})["framerate"] = info.VideoStreams[0].FrameRate
-	}
-
-	// Process video streams
-	videoStreams := []interface{}{}
-	for _, stream := range info.VideoStreams {
-		videoStream := map[string]interface{}{
-			"codec":        stream.Format,
-			"profile":      stream.FormatProfile,
-			"width":        stream.Width,
-			"height":       stream.Height,
-			"aspect_ratio": stream.DisplayAspectRatio,
-			"bit_depth":    stream.BitDepth,
-			"bit_rate":     stream.BitRate,
-			"frame_rate":   stream.FrameRate,
-			"scan_type":    stream.ScanType,
-			"color_space":  stream.ColorSpace,
-		}
-		videoStreams = append(videoStreams, videoStream)
-	}
-	jsonOutput["video_streams"] = videoStreams
-
-	// Process audio streams
-	audioStreams := []interface{}{}
-	for _, stream := range info.AudioStreams {
-		audioStream := map[string]interface{}{
-			"codec":          stream.Format,
-			"channels":       stream.Channels,
-			"channel_layout": stream.ChannelLayout,
-			"sample_rate":    stream.SamplingRate,
-			"bit_rate":       stream.BitRate,
-			"language":       stream.Language,
-		}
-		audioStreams = append(audioStreams, audioStream)
-	}
-	jsonOutput["audio_streams"] = audioStreams
-
-	// Process subtitle streams
-	subtitleStreams := []interface{}{}
-	for _, stream := range info.SubtitleStreams {
-		subtitleStream := map[string]interface{}{
-			"codec":    stream.Format,
-			"language": stream.Language,
-			"title":    stream.Title,
-		}
-		subtitleStreams = append(subtitleStreams, subtitleStream)
-	}
-	jsonOutput["subtitle_streams"] = subtitleStreams
-
-	// Add metadata
-	jsonOutput["analysis_info"] = map[string]interface{}{
-		"timestamp":  time.Now().Format(time.RFC3339),
-		"version":    Version,
-		"build_date": BuildDate,
-	}
-
-	// Marshal the JSON data
-	jsonData, err := json.MarshalIndent(jsonOutput, "", "  ")
-	if err != nil {
-		return fmt.Errorf("error marshaling JSON: %w", err)
-	}
-
-	// Write the JSON data to the file
-	if err := os.WriteFile(outputPath, jsonData, 0600); err != nil {
-		return fmt.Errorf("error writing file: %w", err)
-	}
-
-	return nil
-}
-
-// versionPrinter prints the version information with more details than the default cli version printer.
-// It uses consistent styling defined by the project's standards.
 func versionPrinter(c *cli.Context) {
 	summaryStyle := color.New(color.FgCyan, color.Bold)
 	valueStyle := color.New(color.Bold)
@@ -308,8 +190,12 @@ func versionPrinter(c *cli.Context) {
 // formatDuration formats seconds into a human-readable duration string
 // such as "10.5 seconds" or "1 hour, 2 minutes and 13 seconds"
 func formatDuration(seconds float64) string {
-	// Return seconds with 3 decimal places if less than 60 seconds
+	// Return seconds with appropriate formatting if less than 60 seconds
 	if seconds < 60 {
+		// Check if it's a whole number
+		if seconds == float64(int(seconds)) {
+			return fmt.Sprintf("%d seconds", int(seconds))
+		}
 		return fmt.Sprintf("%.3f seconds", seconds)
 	}
 
@@ -395,11 +281,11 @@ func writeMediaInfoBasicData(w *tabwriter.Writer, info *ffmpeg.ContainerInfo) {
 			sizeInBytes = parsedSize
 		}
 	}
-	humanSize := formatHumanReadableSize(sizeInBytes)
+	humanSize := formatHumanReadableSize(int(sizeInBytes))
 
 	// Write bitrate and size
 	fmt.Fprintf(w, "Bitrate:\t%.2f Kbps\n", float64(bitRate)/1000)
-	fmt.Fprintf(w, "Size:\t%s bytes (%s)\n", formatWithThousandSeparators(sizeInBytes), humanSize)
+	fmt.Fprintf(w, "Size:\t%s\n", humanSize)
 	fmt.Fprintln(w)
 }
 
@@ -414,7 +300,16 @@ func writeMediaInfoContainerSection(w *tabwriter.Writer, info *ffmpeg.ContainerI
 
 	// Format the duration both as seconds and human-readable form
 	humanDuration := formatDuration(info.General.DurationF)
-	fmt.Fprintf(w, "Duration:\t%.3f seconds (%s)\n", info.General.DurationF, humanDuration)
+
+	// Format seconds as integer if it's a whole number
+	var durationStr string
+	if info.General.DurationF == float64(int(info.General.DurationF)) {
+		durationStr = fmt.Sprintf("%d seconds", int(info.General.DurationF))
+	} else {
+		durationStr = fmt.Sprintf("%.3f seconds", info.General.DurationF)
+	}
+
+	fmt.Fprintf(w, "Duration:\t%s (%s)\n", durationStr, humanDuration)
 
 	// Write tags if available
 	if len(info.General.Tags) > 0 {
@@ -429,7 +324,7 @@ func writeMediaInfoContainerSection(w *tabwriter.Writer, info *ffmpeg.ContainerI
 }
 
 // writeMediaInfoVideoStreams writes video stream information
-func writeMediaInfoVideoStreams(w *tabwriter.Writer, streams []ffmpeg.VideoStream) {
+func writeMediaInfoVideoStreams(w *tabwriter.Writer, streams []ffmpeg.VideoStream, info *ffmpeg.ContainerInfo) {
 	if len(streams) == 0 {
 		return
 	}
@@ -437,6 +332,15 @@ func writeMediaInfoVideoStreams(w *tabwriter.Writer, streams []ffmpeg.VideoStrea
 	fmt.Fprintln(w, "===========================================")
 	fmt.Fprintln(w, "VIDEO STREAMS")
 	fmt.Fprintln(w, "===========================================")
+
+	// Calculate total audio bitrate
+	totalAudioBitrate := int64(0)
+	for _, audio := range info.AudioStreams {
+		totalAudioBitrate += audio.BitRate
+	}
+
+	// Get container bitrate
+	containerBitrate := parseBitRate(info.General.BitRate)
 
 	for i, stream := range streams {
 		fmt.Fprintf(w, "\nStream #%d:\n", i)
@@ -451,12 +355,24 @@ func writeMediaInfoVideoStreams(w *tabwriter.Writer, streams []ffmpeg.VideoStrea
 		}
 
 		fmt.Fprintf(w, "  Resolution:\t%dx%d pixels\n", stream.Width, stream.Height)
-		fmt.Fprintf(w, "  Aspect Ratio:\t%.3f\n", stream.DisplayAspectRatio)
+		if stream.DisplayAspectRatio > 0 {
+			fmt.Fprintf(w, "  Aspect Ratio:\t%.3f\n", stream.DisplayAspectRatio)
+		}
 		fmt.Fprintf(w, "  Frame Rate:\t%.3f fps\n", stream.FrameRate)
 
-		if stream.BitRate > 0 {
-			fmt.Fprintf(w, "  Bit Rate:\t%.2f Kbps\n", float64(stream.BitRate)/1000)
+		// Handle bitrate display with calculation if missing
+		videoBitrate := stream.BitRate
+		if videoBitrate <= 0 && len(streams) == 1 && containerBitrate > 0 {
+			// For a single video stream, estimate bitrate by subtracting audio from container bitrate
+			estimatedBitrate := containerBitrate - totalAudioBitrate
+			if estimatedBitrate > 0 {
+				fmt.Fprintf(w, "  Bit Rate:\t%.2f Kbps (estimated)\n", float64(estimatedBitrate)/1000)
+			}
+			// Don't display anything if bitrate can't be calculated
+		} else if videoBitrate > 0 {
+			fmt.Fprintf(w, "  Bit Rate:\t%.2f Kbps\n", float64(videoBitrate)/1000)
 		}
+		// Don't display bitrate at all if it's not available or can't be calculated
 
 		fmt.Fprintf(w, "  Bit Depth:\t%d bits\n", stream.BitDepth)
 
@@ -552,13 +468,37 @@ func writeMediaInfoChapters(w *tabwriter.Writer, chapters []ffmpeg.ChapterStream
 		if chapter.Title != "" {
 			fmt.Fprintf(w, "  Title:\t%s\n", chapter.Title)
 		}
-		fmt.Fprintf(w, "  Start Time:\t%.3f seconds\n", chapter.StartTime)
-		fmt.Fprintf(w, "  End Time:\t%.3f seconds\n", chapter.EndTime)
+
+		// Format start and end times
+		var startTimeStr, endTimeStr string
+		if chapter.StartTime == float64(int(chapter.StartTime)) {
+			startTimeStr = fmt.Sprintf("%d seconds", int(chapter.StartTime))
+		} else {
+			startTimeStr = fmt.Sprintf("%.3f seconds", chapter.StartTime)
+		}
+
+		if chapter.EndTime == float64(int(chapter.EndTime)) {
+			endTimeStr = fmt.Sprintf("%d seconds", int(chapter.EndTime))
+		} else {
+			endTimeStr = fmt.Sprintf("%.3f seconds", chapter.EndTime)
+		}
+
+		fmt.Fprintf(w, "  Start Time:\t%s\n", startTimeStr)
+		fmt.Fprintf(w, "  End Time:\t%s\n", endTimeStr)
 
 		// Format chapter duration in human-readable form
 		chapterDuration := chapter.EndTime - chapter.StartTime
 		humanDuration := formatDuration(chapterDuration)
-		fmt.Fprintf(w, "  Duration:\t%.3f seconds (%s)\n", chapterDuration, humanDuration)
+
+		// Format duration seconds as integer if it's a whole number
+		var durationStr string
+		if chapterDuration == float64(int(chapterDuration)) {
+			durationStr = fmt.Sprintf("%d seconds", int(chapterDuration))
+		} else {
+			durationStr = fmt.Sprintf("%.3f seconds", chapterDuration)
+		}
+
+		fmt.Fprintf(w, "  Duration:\t%s (%s)\n", durationStr, humanDuration)
 	}
 	fmt.Fprintln(w)
 }
@@ -635,7 +575,7 @@ func saveMediaInfoText(info *ffmpeg.ContainerInfo, outputDir string, prober *ffm
 	writeMediaInfoHeader(w, containerTitle, fileName, videoCount, audioCount, subtitleCount)
 	writeMediaInfoBasicData(w, info)
 	writeMediaInfoContainerSection(w, info)
-	writeMediaInfoVideoStreams(w, info.VideoStreams)
+	writeMediaInfoVideoStreams(w, info.VideoStreams, info)
 	writeMediaInfoAudioStreams(w, info.AudioStreams)
 	writeMediaInfoSubtitleStreams(w, info.SubtitleStreams)
 	writeMediaInfoChapters(w, info.ChapterStreams)
@@ -650,45 +590,26 @@ func saveMediaInfoText(info *ffmpeg.ContainerInfo, outputDir string, prober *ffm
 	return nil
 }
 
-// formatHumanReadableSize converts bytes to a human-readable string (KB, MB, GB, etc.)
-func formatHumanReadableSize(bytes int64) string {
+// formatHumanReadableSize formats a size in bytes to a human-readable format
+func formatHumanReadableSize(bytes int) string {
 	const (
-		KB = 1024
-		MB = 1024 * KB
-		GB = 1024 * MB
-		TB = 1024 * GB
+		_          = iota
+		KB float64 = 1 << (10 * iota)
+		MB
+		GB
+		TB
 	)
 
-	var (
-		size float64
-		unit string
-	)
-
-	switch {
-	case bytes >= TB:
-		size = float64(bytes) / TB
-		unit = "TB"
-	case bytes >= GB:
-		size = float64(bytes) / GB
-		unit = "GB"
-	case bytes >= MB:
-		size = float64(bytes) / MB
-		unit = "MB"
-	case bytes >= KB:
-		size = float64(bytes) / KB
-		unit = "KB"
-	default:
-		size = float64(bytes)
-		unit = "bytes"
+	if bytes < 1000 {
+		return fmt.Sprintf("%d bytes", bytes)
+	} else if bytes < 1000*int(KB) {
+		return fmt.Sprintf("%.2f KB", float64(bytes)/KB)
+	} else if bytes < 1000*int(MB) {
+		return fmt.Sprintf("%.2f MB", float64(bytes)/MB)
+	} else if bytes < 1000*int(GB) {
+		return fmt.Sprintf("%.2f GB", float64(bytes)/GB)
 	}
-
-	if size < 10 {
-		return fmt.Sprintf("%.2f %s", size, unit)
-	} else if size < 100 {
-		return fmt.Sprintf("%.1f %s", size, unit)
-	} else {
-		return fmt.Sprintf("%.0f %s", size, unit)
-	}
+	return fmt.Sprintf("%.2f TB", float64(bytes)/TB)
 }
 
 // Public functions (alphabetical)
@@ -762,11 +683,6 @@ func analyzeCommand(c *cli.Context) error {
 
 	// Print simplified container summary with container title
 	printSimpleContainerSummary(containerInfo, prober)
-
-	// Save container information to a JSON file in the output directory
-	if err := saveContainerInfo(containerInfo, outputDir); err != nil {
-		return fmt.Errorf("error saving container info: %w", err)
-	}
 
 	// Save detailed media information to a text file in the output directory
 	if err := saveMediaInfoText(containerInfo, outputDir, prober); err != nil {

@@ -1,7 +1,6 @@
 package main
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -252,48 +251,6 @@ func (s *MainTestSuite) TestPrintSimpleContainerSummary() {
 	}
 }
 
-// TestSaveContainerInfo tests the saveContainerInfo function to ensure it correctly saves
-// container information to a JSON file.
-func (s *MainTestSuite) TestSaveContainerInfo() {
-	// Create a temporary directory for the test output
-	outputDir := filepath.Join(s.tempDir, "container_info_output")
-	err := os.MkdirAll(outputDir, 0755)
-	s.NoError(err)
-
-	// Call the saveContainerInfo function with the test container info
-	err = saveContainerInfo(s.testContainerInfo, outputDir)
-	s.NoError(err)
-
-	// Verify that the file was created
-	infoFile := filepath.Join(outputDir, "test_info.json")
-	_, err = os.Stat(infoFile)
-	s.NoError(err)
-
-	// Read the file and verify its contents
-	content, err := os.ReadFile(infoFile)
-	s.NoError(err)
-
-	// Deserialize the JSON and verify expected content
-	var deserializedInfo map[string]interface{}
-	err = json.Unmarshal(content, &deserializedInfo)
-	s.NoError(err)
-
-	// Check the filename contains "test.mp4"
-	s.Contains(deserializedInfo["filename"], "test.mp4")
-
-	// Check format information
-	formatInfo, ok := deserializedInfo["format"].(map[string]interface{})
-	s.True(ok)
-	s.Equal("MPEG-4", formatInfo["name"])
-	s.Equal(120.5, formatInfo["duration"])
-
-	// Check streams
-	s.NotNil(deserializedInfo["video_streams"])
-	s.NotNil(deserializedInfo["audio_streams"])
-	s.NotNil(deserializedInfo["subtitle_streams"])
-}
-
-// TestParseBitRate tests the parseBitRate function to ensure
 // it correctly parses bitrate strings into integer values.
 func (s *MainTestSuite) TestParseBitRate() {
 	testCases := []struct {
