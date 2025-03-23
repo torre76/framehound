@@ -4,14 +4,18 @@
 package main
 
 import (
+	"context"
+	"encoding/csv"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"text/tabwriter"
 	"time"
 
+	"github.com/cheggaaa/pb/v3"
 	"github.com/fatih/color"
 	"github.com/gertd/go-pluralize"
 	"github.com/torre76/framehound/ffmpeg"
@@ -636,13 +640,42 @@ func analyzeCommand(c *cli.Context) error {
 	// Convert to absolute path
 	absPath, err := filepath.Abs(filePath)
 	if err != nil {
-		return fmt.Errorf("error resolving path: %w", err)
+		return fmt.Errorf("error resolving absolute path: %w", err)
 	}
 
-	// Check if file exists
-	if _, err := os.Stat(absPath); os.IsNotExist(err) {
-		return fmt.Errorf("file not found: %s", absPath)
+	// Create FFmpegInfo instance and detect FFmpeg
+	ffmpegInfo, err := ffmpeg.DetectFFmpeg()
+	if err != nil {
+		return fmt.Errorf("failed to detect FFmpeg: %w", err)
 	}
+
+	// Print FFmpeg info
+	valueStyle.Printf("🔧 Using FFmpeg at %s\n", ffmpegInfo.Path)
+	valueStyle.Printf("🔖 FFmpeg version: %s\n", ffmpegInfo.Version)
+
+	// Create a prober
+	prober, err := ffmpeg.NewProber(ffmpegInfo)
+	if err != nil {
+		return fmt.Errorf("failed to create prober: %w", err)
+	}
+
+	// Analyze the file
+	regularStyle.Printf("\n📊 FILE ANALYSIS\n")
+	regularStyle.Printf("----------------\n\n")
+
+	// Get file info
+	containerInfo, err := prober.GetExtendedContainerInfo(absPath)
+	if err != nil {
+		return fmt.Errorf("failed to analyze file: %w", err)
+	}
+
+	// Print file name with title if available
+	valueStyle.Printf("🎬 Working on: %s\n", prober.GetContainerTitle(containerInfo))
+
+	// Print simple container summary
+	regularStyle.Printf("\nℹ️ STREAM SUMMARY\n")
+	regularStyle.Printf("----------------\n")
+	printSimpleContainerSummary(containerInfo, prober)
 
 	// Delete the output directory if it exists
 	if _, err := os.Stat(outputDir); err == nil {
@@ -656,40 +689,24 @@ func analyzeCommand(c *cli.Context) error {
 		return fmt.Errorf("error creating output directory: %w", err)
 	}
 
-	// Find FFmpeg and check version
-	ffmpegInfo, err := ffmpeg.FindFFmpeg()
-	if err != nil {
-		return fmt.Errorf("error finding FFmpeg: %w", err)
-	}
-
-	// Print FFmpeg information
-	regularStyle.Printf("🔧 Using FFmpeg at ")
-	valueStyle.Printf("%s\n", ffmpegInfo.Path)
-	regularStyle.Printf("🔖 FFmpeg version: ")
-	valueStyle.Printf("%s\n\n", ffmpegInfo.Version)
-
-	// Create a prober for getting media information
-	prober, err := ffmpeg.NewProber(ffmpegInfo)
-	if err != nil {
-		return fmt.Errorf("error creating prober: %w", err)
-	}
-
-	// Get detailed container information
-	containerInfo, err := prober.GetExtendedContainerInfo(absPath)
-	if err != nil {
-		errorStyle.Printf("❌ Container not recognized: %v\n", err)
-		return fmt.Errorf("container not recognized: %w", err)
-	}
-
-	// Print simplified container summary with container title
-	printSimpleContainerSummary(containerInfo, prober)
-
 	// Save detailed media information to a text file in the output directory
 	if err := saveMediaInfoText(containerInfo, outputDir, prober); err != nil {
-		return fmt.Errorf("error saving media info text: %w", err)
+		return fmt.Errorf("error saving media info: %w", err)
+	}
+
+	// Create a bitrate analyzer
+	bitrateAnalyzer, err := ffmpeg.NewBitrateAnalyzer(ffmpegInfo)
+	if err != nil {
+		return fmt.Errorf("failed to create bitrate analyzer: %w", err)
+	}
+
+	// Generate bitrate CSV report
+	if err := saveBitrateCSV(absPath, outputDir, bitrateAnalyzer, c.Bool("show-frames")); err != nil {
+		return fmt.Errorf("error saving bitrate CSV: %w", err)
 	}
 
 	successStyle.Printf("\n✅ Container information saved to %s\n", outputDir)
+
 	return nil
 }
 
@@ -720,6 +737,10 @@ func main() {
 				Usage:   "Directory where to output the results of analysis",
 				Value:   filepath.Join(".", "reports"),
 			},
+			&cli.BoolFlag{
+				Name:  "show-frames",
+				Usage: "Show frame count information for debugging purposes",
+			},
 		},
 	}
 
@@ -728,5 +749,331 @@ func main() {
 		errorStyle := color.New(color.FgRed)
 		errorStyle.Fprintf(os.Stderr, "⚠️ Error: %v\n", err)
 		os.Exit(1)
+	}
+}
+
+// saveBitrateCSV generates a CSV report containing frame-by-frame bitrate information.
+// It creates a csv file with frame number, frame type, and bitrate for each frame.
+// It displays a progress bar during generation to provide user feedback.
+func saveBitrateCSV(filePath string, outputDir string, analyzer *ffmpeg.BitrateAnalyzer, showFrames bool) error {
+	// Set up output file
+	csvFile, writer, err := setupBitrateCSVFile(outputDir)
+	if err != nil {
+		return err
+	}
+	defer csvFile.Close()
+	defer writer.Flush()
+
+	// Get estimated frame count
+	estimatedFrameCount, err := getEstimatedFrameCount(filePath)
+	if err != nil {
+		return err
+	}
+
+	// Display detailed frame count information if enabled
+	if showFrames {
+		infoStyle := color.New(color.FgCyan)
+		infoStyle.Printf("🔢 Estimated frame count: %d\n", estimatedFrameCount)
+	}
+
+	// Create a channel for frame info
+	resultCh := make(chan ffmpeg.FrameBitrateInfo, 100)
+
+	// Create a context with timeout (30 minutes should be enough for most files)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
+	defer cancel()
+
+	// Display header
+	infoStyle := color.New(color.FgCyan, color.Bold)
+	infoStyle.Printf("\n🔍 BITRATE ANALYSIS\n")
+	infoStyle.Printf("----------------\n\n")
+
+	// Create progress bar
+	bar := createProgressBar(estimatedFrameCount)
+
+	// Create a WaitGroup to properly manage goroutine completion
+	var wg sync.WaitGroup
+	var processErr error
+	var actualFrameCount int
+
+	// Start frame processing in a goroutine, but don't wait for it yet
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		actualFrameCount, processErr = processFramesForCSV(ctx, resultCh, writer, bar, cancel)
+	}()
+
+	// Now start the analyzer - it will feed frames into the channel
+	if err := analyzer.Analyze(ctx, filePath, resultCh); err != nil {
+		close(resultCh)
+		return fmt.Errorf("error analyzing file for CSV generation: %w", err)
+	}
+	close(resultCh)
+
+	// Wait for processing to complete
+	wg.Wait()
+
+	// Check for errors during processing
+	if processErr != nil {
+		return processErr
+	}
+
+	// If our estimate was incorrect, adjust the bar to show exactly 100%
+	if actualFrameCount > 0 && actualFrameCount != int(estimatedFrameCount) {
+		// Log the discrepancy in frame count if debug mode is enabled
+		if showFrames {
+			warningStyle := color.New(color.FgYellow)
+			warningStyle.Printf("⚠️ Frame count discrepancy: estimated %d, actual %d\n", estimatedFrameCount, actualFrameCount)
+		}
+
+		// Force the bar to complete
+		bar.SetCurrent(estimatedFrameCount)
+	}
+
+	// Finish and clear the progress bar
+	bar.Finish()
+	fmt.Println() // Add a newline for spacing
+
+	// Print success message with completion indicator
+	successStyle := color.New(color.FgGreen)
+	completedStyle := color.New(color.FgCyan, color.Bold)
+	completedStyle.Println("📈 Generating bitrate report - Completed!")
+	successStyle.Printf("✅ Bitrate report saved to %s\n", filepath.Join(outputDir, "bitrate.csv"))
+
+	return nil
+}
+
+// processFramesForCSV processes frame information from the channel and writes it to the CSV file.
+// It returns the actual frame count and any error that occurred during processing.
+func processFramesForCSV(ctx context.Context, resultCh chan ffmpeg.FrameBitrateInfo, writer *csv.Writer, bar *pb.ProgressBar, cancel context.CancelFunc) (int, error) {
+	var wg sync.WaitGroup
+	wg.Add(1)
+
+	var processErr error
+	actualFrameCount := 0
+
+	go func() {
+		defer wg.Done()
+		frameCount := 0
+
+		for {
+			select {
+			case <-ctx.Done():
+				processErr = ctx.Err()
+				return
+			case frame, ok := <-resultCh:
+				if !ok {
+					// Channel closed, we're done
+					actualFrameCount = frameCount
+					return
+				}
+
+				// Update progress bar
+				bar.Increment()
+
+				// Convert to CSV record
+				record := []string{
+					strconv.Itoa(frame.FrameNumber),
+					frame.FrameType,
+					strconv.FormatInt(frame.Bitrate, 10),
+				}
+
+				// Write CSV record
+				if err := writer.Write(record); err != nil {
+					processErr = fmt.Errorf("error writing CSV record: %w", err)
+					cancel() // Cancel processing on error
+					return
+				}
+
+				// Flush periodically to ensure data is written to disk
+				if frameCount%1000 == 0 {
+					writer.Flush()
+				}
+				frameCount++
+			}
+		}
+	}()
+
+	// Wait for processing to complete
+	wg.Wait()
+
+	// Final flush to ensure all data is written
+	writer.Flush()
+
+	return actualFrameCount, processErr
+}
+
+// setupBitrateCSVFile creates the CSV file and writer for bitrate data.
+func setupBitrateCSVFile(outputDir string) (*os.File, *csv.Writer, error) {
+	// Create the output directory if it doesn't exist
+	err := os.MkdirAll(outputDir, 0755)
+	if err != nil {
+		return nil, nil, fmt.Errorf("error creating output directory: %w", err)
+	}
+
+	// Define output file path
+	outputPath := filepath.Join(outputDir, "bitrate.csv")
+
+	// Create CSV file
+	file, err := os.Create(outputPath)
+	if err != nil {
+		return nil, nil, fmt.Errorf("error creating bitrate CSV file: %w", err)
+	}
+
+	// Set up CSV writer
+	writer := csv.NewWriter(file)
+
+	// Write CSV header
+	if err := writer.Write([]string{"frame_number", "frame_type", "bitrate"}); err != nil {
+		file.Close()
+		return nil, nil, fmt.Errorf("error writing CSV header: %w", err)
+	}
+
+	return file, writer, nil
+}
+
+// getEstimatedFrameCount calculates the estimated frame count for a video file
+// based on the video's duration and frame rate from the container info.
+// It prioritizes speed for immediate feedback while still providing accuracy.
+func getEstimatedFrameCount(filePath string) (int64, error) {
+	// Detect ffmpeg and create a prober
+	ffmpegInfo, err := ffmpeg.DetectFFmpeg()
+	if err != nil {
+		return 5000, fmt.Errorf("error detecting ffmpeg: %w", err)
+	}
+
+	prober, err := ffmpeg.NewProber(ffmpegInfo)
+	if err != nil {
+		return 5000, fmt.Errorf("error creating ffmpeg prober: %w", err)
+	}
+
+	// Get container info to retrieve frame rate and duration
+	containerInfo, err := prober.GetExtendedContainerInfo(filePath)
+	if err != nil {
+		return 5000, fmt.Errorf("error getting container info: %w", err)
+	}
+
+	// Calculate from video stream properties - simple and fast approach
+	var estimatedFrameCount int64 = 0
+
+	// Check each video stream
+	for _, stream := range containerInfo.VideoStreams {
+		// Get frame rate and duration
+		if stream.FrameRate > 0 {
+			var duration float64 = stream.Duration
+
+			// If stream duration is not available, try container duration
+			if duration <= 0 && containerInfo.General.DurationF > 0 {
+				duration = containerInfo.General.DurationF
+			}
+
+			if duration > 0 {
+				// Calculate estimated frame count (duration in seconds * frame rate)
+				// Add a small buffer (2%) to ensure we don't underestimate
+				estimatedCount := int64(duration * stream.FrameRate * 1.02)
+				if estimatedCount > estimatedFrameCount {
+					estimatedFrameCount = estimatedCount
+				}
+			}
+		}
+	}
+
+	// If we couldn't calculate from streams, use a reasonable default
+	if estimatedFrameCount <= 0 {
+		return 5000, nil
+	}
+
+	return estimatedFrameCount, nil
+}
+
+// createProgressBar creates a progress bar with appropriate settings
+// for tracking frame processing progress
+func createProgressBar(estimatedFrameCount int64) *pb.ProgressBar {
+	// Create a descriptive label for the progress bar
+	description := "📈 Generating bitrate report"
+
+	// Create styles for ETA display
+	etaStyle := color.New(color.FgCyan, color.Bold)
+
+	// Create a new progress bar with the appropriate settings
+	// that will fill the entire width of the terminal
+	bar := pb.New64(estimatedFrameCount)
+
+	// Set adaptive width based on terminal size
+	bar.SetWidth(0) // Auto-width mode
+
+	// Configure to use full terminal width with consistent styling
+	bar.SetTemplateString(`{{string . "prefix"}}{{string . "message"}} {{percent .}} {{bar .}} `)
+
+	// Initial message
+	bar.Set("prefix", "")
+	bar.Set("message", description)
+
+	// Update frequency
+	bar.SetRefreshRate(time.Second / 10)
+
+	// Start the bar
+	bar.Start()
+
+	// Start a goroutine to continuously update the description with time remaining
+	go func() {
+		startTime := time.Now()
+		var lastMessage string
+
+		for !bar.IsFinished() {
+			// Only update if we have some progress
+			current := bar.Current()
+			if current > 0 && !bar.IsFinished() {
+				// Calculate remaining time based on progress so far
+				elapsedTime := time.Since(startTime).Seconds()
+				progressRatio := float64(current) / float64(estimatedFrameCount)
+
+				// Avoid division by zero
+				if progressRatio > 0 {
+					// Calculate total time and remaining time
+					totalEstimatedTime := elapsedTime / progressRatio
+					remainingTime := totalEstimatedTime - elapsedTime
+
+					// Format remaining time as a readable string
+					timeRemainingText := formatRemainingTime(remainingTime)
+
+					// Style only the ETA portion in cyan and bold
+					styledTimeRemaining := etaStyle.Sprintf("%s", timeRemainingText)
+
+					// Combine the styled ETA with a regular dash afterwards
+					message := fmt.Sprintf("%s - %s -", description, styledTimeRemaining)
+
+					// Only update if message has changed
+					if message != lastMessage {
+						bar.Set("message", message)
+						lastMessage = message
+					}
+				}
+			}
+
+			// Wait before updating again
+			time.Sleep(time.Second)
+		}
+
+		// Do not reset description when done - the bar will be finished
+		// and replaced with our completion message
+	}()
+
+	return bar
+}
+
+// formatRemainingTime converts seconds to a human-readable time format
+func formatRemainingTime(seconds float64) string {
+	if seconds > 3600 {
+		hours := int(seconds / 3600)
+		minutes := int((seconds - float64(hours)*3600) / 60)
+		return fmt.Sprintf("ETA: %dh %02dm", hours, minutes)
+	} else if seconds > 60 {
+		minutes := int(seconds / 60)
+		secs := int(seconds) % 60
+		return fmt.Sprintf("ETA: %dm %02ds", minutes, secs)
+	} else {
+		secs := int(seconds)
+		return fmt.Sprintf("ETA: %ds", secs)
 	}
 }

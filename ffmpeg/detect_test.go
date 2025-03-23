@@ -4,10 +4,13 @@
 package ffmpeg
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -188,6 +191,75 @@ func (s *FFmpegTestSuite) TestCheckQPReadingSupport() {
 	// Only run the actual FFmpeg version detection if FFmpeg is installed
 	if ffmpegInstalled {
 		s.T().Logf("QP support detection with actual version output: %v", info.HasQPReadingInfoSupport)
+	}
+}
+
+// TestGetFFmpegPath tests the GetFFmpegPath function to ensure it correctly
+// detects the FFmpeg executable path.
+func (s *FFmpegTestSuite) TestGetFFmpegPath() {
+	// Get FFmpeg path
+	path := GetFFmpegPath()
+
+	// Check if FFmpeg is installed
+	info, _ := FindFFmpeg()
+
+	if info.Installed {
+		assert.NotEmpty(s.T(), path, "Path should not be empty when FFmpeg is installed")
+		assert.FileExists(s.T(), path, "FFmpeg executable should exist at the reported path")
+	} else {
+		assert.Empty(s.T(), path, "Path should be empty when FFmpeg is not installed")
+	}
+}
+
+// TestGetExecutablePaths tests the GetExecutablePaths function to ensure it
+// correctly returns both FFmpeg and FFprobe paths.
+func (s *FFmpegTestSuite) TestGetExecutablePaths() {
+	// Skip test if FFmpeg is not installed
+	info, _ := FindFFmpeg()
+	if !info.Installed {
+		s.T().Skip("FFmpeg not installed, skipping test")
+		return
+	}
+
+	// Get executable paths
+	paths := GetExecutablePaths(info.Path)
+
+	// Verify FFmpeg path
+	assert.Equal(s.T(), info.Path, paths.FFmpeg, "FFmpeg path should match the detected path")
+
+	// Verify FFprobe path exists in the same directory
+	ffprobeDir := filepath.Dir(paths.FFprobe)
+	ffmpegDir := filepath.Dir(paths.FFmpeg)
+	assert.Equal(s.T(), ffmpegDir, ffprobeDir, "FFprobe should be in the same directory as FFmpeg")
+
+	// Check correct extension based on OS
+	if runtime.GOOS == "windows" {
+		assert.True(s.T(), strings.HasSuffix(paths.FFprobe, ".exe"), "FFprobe path should have .exe extension on Windows")
+	} else {
+		assert.False(s.T(), strings.HasSuffix(paths.FFprobe, ".exe"), "FFprobe path should not have .exe extension on non-Windows")
+	}
+}
+
+// TestVerifyFFmpeg tests the VerifyFFmpeg function to ensure it correctly
+// verifies FFmpeg installation and returns the proper information.
+func (s *FFmpegTestSuite) TestVerifyFFmpeg() {
+	// Create a context with timeout
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	// Verify FFmpeg
+	info, err := VerifyFFmpeg(ctx)
+	require.NoError(s.T(), err, "VerifyFFmpeg() should not return error")
+
+	// Compare with FindFFmpeg results
+	findInfo, _ := FindFFmpeg()
+
+	// Check if results are consistent
+	assert.Equal(s.T(), findInfo.Installed, info.Installed, "Installed status should be consistent")
+
+	if info.Installed {
+		assert.Equal(s.T(), findInfo.Path, info.Path, "Path should be consistent")
+		assert.NotEmpty(s.T(), info.Version, "Version should not be empty when FFmpeg is installed")
 	}
 }
 

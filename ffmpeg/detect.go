@@ -4,13 +4,22 @@
 package ffmpeg
 
 import (
+	"bytes"
 	"context"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"strings"
 )
+
+// Private variables (alphabetical)
+
+// ffmpegVersionRegex is used to detect FFmpeg version from version string.
+// It extracts the numeric version (e.g., 4.4.1) from FFmpeg's version output.
+var ffmpegVersionRegex = regexp.MustCompile(`version\s+(\d+\.\d+(?:\.\d+)?)`)
 
 // Private functions (alphabetical)
 
@@ -284,4 +293,70 @@ func getCommonInstallPaths() []string {
 		}
 	}
 	return searchPaths
+}
+
+// GetExecutablePaths gets the paths to both FFmpeg and FFprobe.
+// It assumes FFprobe is located in the same directory as FFmpeg.
+func GetExecutablePaths(ffmpegPath string) *ExecutablePaths {
+	ffprobePath := filepath.Join(filepath.Dir(ffmpegPath), "ffprobe")
+	if runtime.GOOS == "windows" {
+		ffprobePath += ".exe"
+	}
+	return &ExecutablePaths{
+		FFmpeg:  ffmpegPath,
+		FFprobe: ffprobePath,
+	}
+}
+
+// GetFFmpegPath attempts to detect the path to the FFmpeg executable.
+// It returns the path if found, or an empty string if not found.
+func GetFFmpegPath() string {
+	ffmpegPath, found := checkFFmpegExistence()
+	if found {
+		return ffmpegPath
+	}
+	return ""
+}
+
+// VerifyFFmpeg checks if FFmpeg is installed and available.
+// It returns a populated FFmpegInfo struct with installation details.
+func VerifyFFmpeg(ctx context.Context) (*FFmpegInfo, error) {
+	// Try to find FFmpeg
+	ffmpegPath := GetFFmpegPath()
+	if ffmpegPath == "" {
+		return &FFmpegInfo{
+			Installed: false,
+		}, nil
+	}
+
+	// Execute FFmpeg to get version
+	cmd := exec.CommandContext(ctx, ffmpegPath, "-version")
+	var out bytes.Buffer
+	cmd.Stdout = &out
+	err := cmd.Run()
+	if err != nil {
+		return &FFmpegInfo{
+			Path:      ffmpegPath,
+			Installed: false,
+		}, fmt.Errorf("failed to execute FFmpeg: %w", err)
+	}
+
+	// Extract version number
+	version := ""
+	output := out.String()
+	matches := ffmpegVersionRegex.FindStringSubmatch(output)
+	if len(matches) >= 2 {
+		version = matches[1]
+	}
+
+	// Check if FFmpeg can provide QP information
+	// This is detected based on the presence of debug options
+	hasQPSupport := strings.Contains(output, "debug")
+
+	return &FFmpegInfo{
+		Path:                    ffmpegPath,
+		Version:                 version,
+		Installed:               true,
+		HasQPReadingInfoSupport: hasQPSupport,
+	}, nil
 }
