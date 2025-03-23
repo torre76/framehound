@@ -4,6 +4,7 @@ go 1.24.1
 
 require (
 	github.com/fatih/color v1.18.0
+	github.com/gertd/go-pluralize v0.2.1
 	github.com/stretchr/testify v1.8.0
 	github.com/urfave/cli/v2 v2.27.6
 )

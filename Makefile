@@ -4,9 +4,17 @@
 APP_NAME := framehound
 DIST_DIR := ./dist
 BUILD_DIR := ./build
-VERSION := $(shell git describe --tags --always --dirty 2>/dev/null || echo "Development Version")
-BUILD_DATE := $(shell date -u +"%Y-%m-%dT%H:%M:%SZ")
+# Check if the git repo is dirty
+IS_DIRTY := $(shell git diff --quiet || echo "dirty")
+# Use Development Version if the repo is dirty
+ifeq ($(IS_DIRTY),dirty)
+VERSION := Development Version
+COMMIT := unknown
+else
+VERSION := $(shell git describe --tags --always 2>/dev/null || echo "Development Version")
 COMMIT := $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
+endif
+BUILD_DATE := $(shell date -u +"%Y-%m-%dT%H:%M:%SZ")
 LDFLAGS := -ldflags "-X 'main.Version=${VERSION}' -X 'main.BuildDate=${BUILD_DATE}' -X 'main.Commit=${COMMIT}'"
 
 # Default target
