@@ -96,7 +96,7 @@ func printSimpleContainerSummary(info *ffmpeg.ContainerInfo, prober *ffmpeg.Prob
 	containerTitle := prober.GetContainerTitle(info)
 
 	// Print the file name with proper styling
-	summaryStyle.Println("📊 FILE ANALYSIS")
+	summaryStyle.Println("\n📊 FILE ANALYSIS")
 	regularStyle.Println("----------------")
 	fmt.Println()
 	regularStyle.Printf("🎬 Working on: ")
@@ -589,6 +589,10 @@ func saveMediaInfoText(info *ffmpeg.ContainerInfo, outputDir string, prober *ffm
 		return fmt.Errorf("error flushing output: %w", err)
 	}
 
+	// Print confirmation message with proper styling
+	successStyle := color.New(color.FgGreen)
+	successStyle.Printf("✅ Media information saved to %s\n", outputPath)
+
 	return nil
 }
 
@@ -657,22 +661,12 @@ func analyzeCommand(c *cli.Context) error {
 		return fmt.Errorf("failed to create prober: %w", err)
 	}
 
-	// Analyze the file
-	regularStyle.Printf("\n📊 FILE ANALYSIS\n")
-	regularStyle.Printf("----------------\n\n")
-
 	// Get file info
 	containerInfo, err := prober.GetExtendedContainerInfo(absPath)
 	if err != nil {
 		return fmt.Errorf("failed to analyze file: %w", err)
 	}
 
-	// Print file name with title if available
-	valueStyle.Printf("🎬 Working on: %s\n", prober.GetContainerTitle(containerInfo))
-
-	// Print simple container summary
-	regularStyle.Printf("\nℹ️ STREAM SUMMARY\n")
-	regularStyle.Printf("----------------\n")
 	printSimpleContainerSummary(containerInfo, prober)
 
 	// Delete the output directory if it exists
@@ -703,7 +697,7 @@ func analyzeCommand(c *cli.Context) error {
 		return fmt.Errorf("error saving bitrate CSV: %w", err)
 	}
 
-	successStyle.Printf("\n✅ Container information saved to %s\n", outputDir)
+	successStyle.Printf("\n✅ Analysis complete! All reports saved to %s\n", outputDir)
 
 	return nil
 }
