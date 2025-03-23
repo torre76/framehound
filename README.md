@@ -10,145 +10,163 @@
   <a href="https://goreportcard.com/report/github.com/torre76/framehound"><img src="https://goreportcard.com/badge/github.com/torre76/framehound" alt="Go Report Card"></a>
 </p>
 
-Video analysis toolkit for extracting quality metrics and frame information from video files.
+A tool for analyzing video frame bitrates and extracting detailed media container information.
 
 ## Features
 
-- **QP Analyzer**: Extract Quantization Parameter (QP) values from H.264, HEVC, and other compatible video files
-- **Bitrate Analyzer**: Analyze video bitrate statistics
-- **Quality Analyzer**: Comprehensive video quality analysis including:
-  - Basic video properties (codec, resolution, duration)
-  - Quality metrics (PSNR, SSIM, VMAF)
-  - QP analysis for supported codecs
-  - Frame-level information
+- **Media Container Analysis**: Extract comprehensive metadata about media containers
+- **Bitrate Analysis**: Frame-by-frame bitrate information with CSV output
+- **Detailed Reports**: Generate detailed text reports with file and stream information
+- **Progress Tracking**: Visual progress bars with ETA during analysis
+- **User-Friendly Output**: Clean, color-coded terminal output
 
 ## Requirements
 
-- FFmpeg and FFprobe installed on your system
-- Go 1.16+
+- FFmpeg installed on your system (version 4.0 or newer recommended)
+- Go 1.20+ for building from source
 
 ## Installation
 
 ### Using Go Install
 
 ```bash
-go get github.com/torre76/framehound
+go install github.com/torre76/framehound@latest
 ```
 
 ### Building from Source
 
-#### Standard Build
-
-To build FrameHound from source:
+The project includes a Makefile to simplify building:
 
 ```bash
+# Clone the repository
 git clone https://github.com/torre76/framehound.git
 cd framehound
-go build
-```
 
-#### Building with Version Information
+# Show available make targets
+make help
 
-FrameHound uses build-time variables to embed version information. The Makefile provides targets to simplify this process:
-
-```bash
-# Download dependencies only
+# Download dependencies
 make deps
 
-# Build with version from git tags (automatically downloads dependencies)
+# Build with version from git tags
 # The executable will be placed in the ./dist directory
 make build
 
 # Clean and rebuild
 make clean build
+
+# Install to your GOPATH/bin
+make install
 ```
 
 ## Usage
 
-### Quality Analysis
+### Command Line Interface
 
-Analyze video quality metrics of a file:
+FrameHound is a command-line tool that analyzes video files and generates reports:
+
+```bash
+# Basic usage
+framehound VIDEO_FILE
+
+# Specify custom output directory
+framehound --dir=my-reports VIDEO_FILE
+framehound -d my-reports VIDEO_FILE
+
+# Show detailed frame count information (debugging)
+framehound --show-frames VIDEO_FILE
+
+# Show version information
+framehound --version
+framehound -v
+```
+
+### Output
+
+FrameHound generates the following outputs in the reports directory:
+
+1. `mediainfo.txt`: Detailed text report with comprehensive media information
+2. `bitrate.csv`: CSV file with frame-by-frame bitrate information
+
+Example output:
+
+```
+🔧 Using FFmpeg at /usr/bin/ffmpeg
+🔖 FFmpeg version: 5.1.2
+
+📊 FILE ANALYSIS
+----------------
+
+🎬 Working on: Sample Video [sample.mkv]
+
+ℹ️ STREAM SUMMARY
+----------------
+🎞️ 1 video stream
+🔊 2 audio streams
+💬 0 subtitle tracks
+✅ Media information saved to reports/mediainfo.txt
+
+🔍 BITRATE ANALYSIS
+----------------
+
+📈 Generating bitrate report - Completed!
+✅ Bitrate report saved to reports/bitrate.csv
+
+✅ Analysis complete! All reports saved to reports
+```
+
+### Programmatic Usage
+
+FrameHound can also be used as a library in your Go projects:
 
 ```go
 package main
 
 import (
-    "context"
     "fmt"
     "log"
-    "time"
     
-    "github.com/youruser/framehound/ffmpeg"
+    "github.com/torre76/framehound/ffmpeg"
 )
 
 func main() {
-    // Create a context with timeout
-    ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
-    defer cancel()
-    
-    // Get FFmpeg info
-    ffmpegInfo, err := ffmpeg.NewFFmpegInfo()
+    // Detect FFmpeg
+    ffmpegInfo, err := ffmpeg.DetectFFmpeg()
     if err != nil {
-        log.Fatalf("Failed to get FFmpeg info: %v", err)
+        log.Fatalf("Failed to detect FFmpeg: %v", err)
     }
     
-    // Create a quality analyzer
-    analyzer := ffmpeg.NewQualityAnalyzer(ffmpegInfo.FFmpegPath)
+    fmt.Printf("FFmpeg found at: %s\n", ffmpegInfo.Path)
+    fmt.Printf("FFmpeg version: %s\n", ffmpegInfo.Version)
     
-    // Path to video file
+    // Create a prober for container analysis
+    prober, err := ffmpeg.NewProber(ffmpegInfo)
+    if err != nil {
+        log.Fatalf("Failed to create prober: %v", err)
+    }
+    
+    // Get container information
     videoFile := "path/to/your/video.mp4"
-    
-    // Generate quality report
-    report, err := analyzer.GenerateQualityReport(ctx, videoFile)
+    containerInfo, err := prober.GetExtendedContainerInfo(videoFile)
     if err != nil {
-        log.Fatalf("Failed to generate quality report: %v", err)
+        log.Fatalf("Failed to analyze file: %v", err)
     }
     
-    // Print report
-    fmt.Printf("Video Quality Report:\n")
-    fmt.Printf("Format: %s\n", report.Format)
-    fmt.Printf("Codec: %s\n", report.Codec)
-    fmt.Printf("Resolution: %dx%d\n", report.Width, report.Height)
-    fmt.Printf("Duration: %.2f seconds\n", report.Duration)
-    fmt.Printf("Bitrate: %d kbps\n", report.Bitrate)
+    // Print basic information
+    fmt.Printf("Format: %s\n", containerInfo.General.Format)
+    fmt.Printf("Duration: %.2f seconds\n", containerInfo.General.DurationF)
+    fmt.Printf("Video streams: %d\n", len(containerInfo.VideoStreams))
+    fmt.Printf("Audio streams: %d\n", len(containerInfo.AudioStreams))
     
-    if report.AverageQP > 0 {
-        fmt.Printf("Average QP: %.2f\n", report.AverageQP)
+    // Create a bitrate analyzer
+    bitrateAnalyzer, err := ffmpeg.NewBitrateAnalyzer(ffmpegInfo)
+    if err != nil {
+        log.Fatalf("Failed to create bitrate analyzer: %v", err)
     }
     
-    // Calculate PSNR, SSIM, and VMAF against a reference file
-    referenceFile := "path/to/reference.mp4"
-    
-    psnr, err := analyzer.CalculatePSNR(ctx, videoFile, referenceFile)
-    if err == nil {
-        fmt.Printf("PSNR: %.2f dB\n", psnr)
-    }
-    
-    ssim, err := analyzer.CalculateSSIM(ctx, videoFile, referenceFile)
-    if err == nil {
-        fmt.Printf("SSIM: %.4f\n", ssim)
-    }
-    
-    vmaf, err := analyzer.CalculateVMAF(ctx, videoFile, referenceFile)
-    if err == nil {
-        fmt.Printf("VMAF: %.2f\n", vmaf)
-    }
+    // Analyze bitrate information
+    // Implementation details depend on specific needs
 }
-```
-
-### Running Quality Tests
-
-The project includes a script to run quality tests:
-
-```bash
-# Run all quality tests
-./scripts/run_quality_tests.sh
-
-# Run tests for a specific sample
-./scripts/run_quality_tests.sh 1  # For sample.mkv
-./scripts/run_quality_tests.sh 2  # For sample2.mkv
-./scripts/run_quality_tests.sh 3  # For sample3.avi
-./scripts/run_quality_tests.sh 4  # For sample4.avi
 ```
 
 ## License
