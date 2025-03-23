@@ -1,6 +1,6 @@
 // Package ffmpeg provides functionality for detecting and working with FFmpeg.
 // It includes capabilities for detecting FFmpeg installation, version, and support
-// for advanced features like QP and CU analysis.
+// for advanced features like QP analysis.
 package ffmpeg
 
 import (
@@ -13,49 +13,6 @@ import (
 )
 
 // Private functions (alphabetical)
-
-// checkCUReadingSupport determines if the installed FFmpeg version supports coding unit (CU) analysis.
-// It employs multiple detection methods including checking for debug flags in the build configuration,
-// looking for debug builds (ffmpeg_g), and attempting a test command with debug options.
-// This capability is essential for detailed encoding analysis of HEVC/H.265 and AV1 videos.
-func checkCUReadingSupport(ffmpegPath string, versionOutput string) bool {
-	// Method 1: Check configuration flags in version output
-	if strings.Contains(versionOutput, "--enable-debug") ||
-		strings.Contains(versionOutput, "with-debug") {
-		return true
-	}
-
-	// Method 2: Check for ffmpeg_g executable (debug build)
-	debugPath := ""
-	if strings.HasSuffix(ffmpegPath, ".exe") {
-		debugPath = strings.TrimSuffix(ffmpegPath, ".exe") + "_g.exe"
-	} else {
-		debugPath = ffmpegPath + "_g"
-	}
-
-	if _, err := os.Stat(debugPath); err == nil {
-		return true
-	}
-
-	// Method 3: Check for -debug:v cu support
-	// Create a temporary file for testing
-	tempDir, err := os.MkdirTemp("", "ffmpeg-debug-test")
-	if err != nil {
-		return false
-	}
-	defer os.RemoveAll(tempDir)
-
-	// Create a small test file
-	testFile := filepath.Join(tempDir, "test.mp4")
-
-	// Try to run FFmpeg with -debug:v cu parameter
-	cmd := exec.Command(ffmpegPath, "-hide_banner", "-v", "error", "-debug:v", "cu", "-f", "lavfi", "-i", "testsrc=duration=1:size=192x108:rate=1", "-c:v", "libx265", "-f", "null", testFile)
-	if err := cmd.Run(); err == nil {
-		return true
-	}
-
-	return false
-}
 
 // checkFFmpegExistence confirms if FFmpeg is installed on the system by searching for the executable.
 // It first looks for the ffmpeg executable in the user's PATH environment variable.
@@ -226,34 +183,33 @@ func getFFmpegVersion(ffmpegPath string) (string, string, []string, string, erro
 
 // Public functions (alphabetical)
 
-// DetectFFmpeg identifies the FFmpeg installation on the system and its capabilities.
-// It searches for the FFmpeg executable, checks its version, and determines if it supports
-// advanced features like QP and CU analysis. The collected information is returned
-// in an FFmpegInfo structure that applications can use to make decisions about
-// available functionality.
+// DetectFFmpeg locates and identifies FFmpeg installation on the system.
+// It returns an FFmpegInfo struct with details including path, version, and capabilities.
+// If FFmpeg is not installed or cannot be found, it returns an error.
 func DetectFFmpeg() (*FFmpegInfo, error) {
-	// Check if FFmpeg exists
-	ffmpegPath, exists := checkFFmpegExistence()
-	if !exists {
+	// Find the FFmpeg executable
+	ffmpegPath, found := checkFFmpegExistence()
+	if !found {
 		return &FFmpegInfo{
 			Installed: false,
 		}, nil
 	}
 
-	// Get FFmpeg version
+	// Get FFmpeg version information
 	version, _, _, versionOutput, err := getFFmpegVersion(ffmpegPath)
 	if err != nil {
 		return &FFmpegInfo{
-			Installed: true,
-			Path:      ffmpegPath,
-		}, FormatError("FFmpeg found but error getting version: %w", err)
+			Installed: false,
+		}, err
+	}
+
+	// If version is empty, set it to unknown
+	if version == "" {
+		version = "unknown"
 	}
 
 	// Check if FFmpeg supports QP reading
 	hasQPReading := checkQPReadingSupport(ffmpegPath, versionOutput)
-
-	// Check if FFmpeg supports CU reading
-	hasCUReading := checkCUReadingSupport(ffmpegPath, versionOutput)
 
 	// Create the FFmpegInfo structure
 	info := &FFmpegInfo{
@@ -261,7 +217,6 @@ func DetectFFmpeg() (*FFmpegInfo, error) {
 		Path:                    ffmpegPath,
 		Version:                 version,
 		HasQPReadingInfoSupport: hasQPReading,
-		HasCUReadingInfoSupport: hasCUReading,
 	}
 
 	return info, nil

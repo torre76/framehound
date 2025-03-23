@@ -10,21 +10,22 @@
   <a href="https://goreportcard.com/report/github.com/torre76/framehound"><img src="https://goreportcard.com/badge/github.com/torre76/framehound" alt="Go Report Card"></a>
 </p>
 
-FrameHound is a tool for analyzing video files, with a focus on frame-level metrics and quality assessment.
+Video analysis toolkit for extracting quality metrics and frame information from video files.
 
 ## Features
 
-- Automatic detection of FFmpeg installation
-- Support for QP (Quantization Parameter) analysis of video files
-- Support for CU (Coding Unit) analysis for advanced codec debugging
-- Real-time processing of video frames
-- Detailed frame rate analysis with improved precision (to 3 decimal places)
-- Codec support for QP analysis: XviD, DivX, AVI, and H.264 (not AVC)
+- **QP Analyzer**: Extract Quantization Parameter (QP) values from H.264, HEVC, and other compatible video files
+- **Bitrate Analyzer**: Analyze video bitrate statistics
+- **Quality Analyzer**: Comprehensive video quality analysis including:
+  - Basic video properties (codec, resolution, duration)
+  - Quality metrics (PSNR, SSIM, VMAF)
+  - QP analysis for supported codecs
+  - Frame-level information
 
 ## Requirements
 
-- FFmpeg with debug support (compiled with `--enable-debug` or with a debug build available)
-- Go 1.16 or higher
+- FFmpeg and FFprobe installed on your system
+- Go 1.16+
 
 ## Installation
 
@@ -64,134 +65,91 @@ make clean build
 
 ## Usage
 
-### Basic Usage
+### Quality Analysis
 
-```bash
-framehound VIDEO_FILE
+Analyze video quality metrics of a file:
+
+```go
+package main
+
+import (
+    "context"
+    "fmt"
+    "log"
+    "time"
+    
+    "github.com/youruser/framehound/ffmpeg"
+)
+
+func main() {
+    // Create a context with timeout
+    ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+    defer cancel()
+    
+    // Get FFmpeg info
+    ffmpegInfo, err := ffmpeg.NewFFmpegInfo()
+    if err != nil {
+        log.Fatalf("Failed to get FFmpeg info: %v", err)
+    }
+    
+    // Create a quality analyzer
+    analyzer := ffmpeg.NewQualityAnalyzer(ffmpegInfo.FFmpegPath)
+    
+    // Path to video file
+    videoFile := "path/to/your/video.mp4"
+    
+    // Generate quality report
+    report, err := analyzer.GenerateQualityReport(ctx, videoFile)
+    if err != nil {
+        log.Fatalf("Failed to generate quality report: %v", err)
+    }
+    
+    // Print report
+    fmt.Printf("Video Quality Report:\n")
+    fmt.Printf("Format: %s\n", report.Format)
+    fmt.Printf("Codec: %s\n", report.Codec)
+    fmt.Printf("Resolution: %dx%d\n", report.Width, report.Height)
+    fmt.Printf("Duration: %.2f seconds\n", report.Duration)
+    fmt.Printf("Bitrate: %d kbps\n", report.Bitrate)
+    
+    if report.AverageQP > 0 {
+        fmt.Printf("Average QP: %.2f\n", report.AverageQP)
+    }
+    
+    // Calculate PSNR, SSIM, and VMAF against a reference file
+    referenceFile := "path/to/reference.mp4"
+    
+    psnr, err := analyzer.CalculatePSNR(ctx, videoFile, referenceFile)
+    if err == nil {
+        fmt.Printf("PSNR: %.2f dB\n", psnr)
+    }
+    
+    ssim, err := analyzer.CalculateSSIM(ctx, videoFile, referenceFile)
+    if err == nil {
+        fmt.Printf("SSIM: %.4f\n", ssim)
+    }
+    
+    vmaf, err := analyzer.CalculateVMAF(ctx, videoFile, referenceFile)
+    if err == nil {
+        fmt.Printf("VMAF: %.2f\n", vmaf)
+    }
+}
 ```
 
-This will analyze the video file and generate a report in the `./reports` directory.
+### Running Quality Tests
 
-### Custom Output Directory
-
-```bash
-framehound --dir=custom_reports VIDEO_FILE
-```
-
-or use the short flag:
+The project includes a script to run quality tests:
 
 ```bash
-framehound -d custom_reports VIDEO_FILE
+# Run all quality tests
+./scripts/run_quality_tests.sh
+
+# Run tests for a specific sample
+./scripts/run_quality_tests.sh 1  # For sample.mkv
+./scripts/run_quality_tests.sh 2  # For sample2.mkv
+./scripts/run_quality_tests.sh 3  # For sample3.avi
+./scripts/run_quality_tests.sh 4  # For sample4.avi
 ```
-
-### Version Information
-
-To view version information:
-
-```bash
-framehound --version
-```
-
-## Output
-
-FrameHound provides detailed information about video files, including:
-
-### Container Information
-
-- Format and format version
-- File size
-- Duration
-- Overall bitrate
-- Frame rate
-
-### Video Streams
-
-- Codec and profile
-- Resolution
-- Aspect ratio
-- Bit depth
-- Bitrate
-- Frame rate
-- Scan type
-- Color space
-
-### Audio Streams
-
-- Codec
-- Channels and layout
-- Sample rate
-- Bitrate
-- Language
-
-### Subtitle Streams
-
-- Codec
-- Language
-- Title
-
-## Development
-
-### Project Structure
-
-The project is organized into the following main packages:
-
-- **ffmpeg**: Contains all functionality related to ffmpeg operations
-- **main**: Entry point for the command-line application
-
-### Continuous Integration
-
-This project uses GitHub Actions for continuous integration with the following checks:
-
-- **Testing**: Runs the unit test suite with race detection
-- **Code Coverage**: Reports test coverage to Codecov
-- **Static Analysis**: Uses golangci-lint to check for common issues
-- **Dependency Scanning**: Checks for vulnerable dependencies using govulncheck and deps.dev
-- **Cyclomatic Complexity**: Ensures that no function exceeds a complexity of 15
-
-To run the same checks locally:
-
-```bash
-# Run tests with coverage
-go test -v -race -coverprofile=coverage.txt -covermode=atomic ./...
-
-# Install and run golangci-lint
-go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
-golangci-lint run
-
-# Check cyclomatic complexity
-go install github.com/fzipp/gocyclo/cmd/gocyclo@latest
-~/go/bin/gocyclo -over 15 .
-
-# Check for vulnerabilities
-go install golang.org/x/vuln/cmd/govulncheck@latest
-govulncheck ./...
-```
-
-### Code Quality Standards
-
-#### Cyclomatic Complexity
-
-FrameHound enforces a maximum cyclomatic complexity of 15 for all functions. This helps ensure that:
-
-- Code remains maintainable and readable
-- Functions have a single, clear responsibility
-- Testing is more straightforward
-- Cognitive load is reduced when understanding the codebase
-
-Exceeding this limit will cause CI builds to fail. If you need to refactor a complex function:
-
-1. Break it down into smaller, focused helper functions
-2. Use strategy pattern to handle different cases
-3. Replace nested conditionals with early returns
-4. Consider using more descriptive variable names for clarity
-
-### Contributing
-
-1. Fork the repository
-2. Create a feature branch: `git checkout -b feature/my-feature`
-3. Commit your changes: `git commit -am 'Add some feature'`
-4. Push to the branch: `git push origin feature/my-feature`
-5. Submit a pull request
 
 ## License
 

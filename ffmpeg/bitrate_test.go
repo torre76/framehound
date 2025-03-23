@@ -29,15 +29,7 @@ func (s *BitrateAnalyzerTestSuite) SetupSuite() {
 	require.NoError(s.T(), err, "Failed to find FFmpeg")
 
 	if !s.ffmpegInfo.Installed {
-		s.T().Log("FFmpeg not installed, using mock FFmpegInfo for tests")
-		// Create a basic mock FFmpegInfo for testing
-		s.ffmpegInfo = &FFmpegInfo{
-			Installed:               true,
-			Path:                    "/mock/path/to/ffmpeg",
-			Version:                 "mock-version",
-			HasQPReadingInfoSupport: true,
-			HasCUReadingInfoSupport: true,
-		}
+		s.T().Skip("FFmpeg not installed, skipping tests")
 	}
 
 	s.analyzer, err = NewBitrateAnalyzer(s.ffmpegInfo)

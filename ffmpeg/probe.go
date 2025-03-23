@@ -1,5 +1,7 @@
-// Package ffmpeg provides functionality for interacting with FFmpeg
-// and extracting information from media files.
+// Package ffmpeg provides functionality for detecting and working with FFmpeg.
+// It offers capabilities for analyzing video files, extracting metadata, and
+// processing frame-level information such as bitrates, quality parameters, and
+// quality metrics including QP values, PSNR, SSIM, and VMAF.
 package ffmpeg
 
 import (
@@ -12,90 +14,10 @@ import (
 	"strings"
 )
 
-// Private constants (alphabetical)
+// Private variables (alphabetical)
 
 // titleFieldsRegex is a regular expression to match whitespace and special characters in titles.
 var titleFieldsRegex = regexp.MustCompile(`[\s._-]+`)
-
-// Public constants (alphabetical)
-// None currently defined
-
-// Private variables (alphabetical)
-// None currently defined
-
-// Public variables (alphabetical)
-// None currently defined
-
-// Private types (alphabetical)
-
-// chapterOutput represents a chapter's metadata in the ffprobe JSON output.
-type chapterOutput struct {
-	ID        int64             `json:"id"`
-	TimeBase  string            `json:"time_base"`
-	Start     int64             `json:"start"`
-	StartTime string            `json:"start_time"`
-	End       int64             `json:"end"`
-	EndTime   string            `json:"end_time"`
-	Tags      map[string]string `json:"tags,omitempty"`
-}
-
-// ffprobeFormatOutput represents a container's format metadata in the ffprobe JSON output.
-type ffprobeFormatOutput struct {
-	Filename         string            `json:"filename"`
-	NBStreams        int               `json:"nb_streams"`
-	NBPrograms       int               `json:"nb_programs"`
-	FormatName       string            `json:"format_name"`
-	FormatLongName   string            `json:"format_long_name"`
-	StartTime        string            `json:"start_time"`
-	Duration         string            `json:"duration"`
-	Size             string            `json:"size"`
-	BitRate          string            `json:"bit_rate"`
-	ProbeScore       int               `json:"probe_score"`
-	Tags             map[string]string `json:"tags,omitempty"`
-	Chapters         []chapterOutput   `json:"chapters,omitempty"`
-	FormatProperties map[string]string `json:"format_properties,omitempty"`
-}
-
-// ffprobeOutput represents the complete output from ffprobe.
-type ffprobeOutput struct {
-	Streams  []ffprobeStreamOutput `json:"streams"`
-	Format   ffprobeFormatOutput   `json:"format"`
-	Chapters []chapterOutput       `json:"chapters,omitempty"`
-}
-
-// ffprobeStreamOutput represents a stream's metadata in the ffprobe JSON output.
-type ffprobeStreamOutput struct {
-	Index              int               `json:"index"`
-	CodecName          string            `json:"codec_name"`
-	CodecLongName      string            `json:"codec_long_name"`
-	Profile            string            `json:"profile"`
-	CodecType          string            `json:"codec_type"`
-	CodecTagString     string            `json:"codec_tag_string"`
-	CodecTag           string            `json:"codec_tag"`
-	Width              int               `json:"width,omitempty"`
-	Height             int               `json:"height,omitempty"`
-	SampleRate         string            `json:"sample_rate,omitempty"`
-	Channels           int               `json:"channels,omitempty"`
-	ChannelLayout      string            `json:"channel_layout,omitempty"`
-	BitsPerSample      int               `json:"bits_per_sample,omitempty"`
-	HasBFrames         int               `json:"has_b_frames,omitempty"`
-	SampleAspectRatio  string            `json:"sample_aspect_ratio,omitempty"`
-	DisplayAspectRatio string            `json:"display_aspect_ratio,omitempty"`
-	BitRate            string            `json:"bit_rate,omitempty"`
-	BitsPerRawSample   string            `json:"bits_per_raw_sample,omitempty"`
-	FrameRate          string            `json:"r_frame_rate,omitempty"`
-	ColorRange         string            `json:"color_range,omitempty"`
-	ColorSpace         string            `json:"color_space,omitempty"`
-	PixFmt             string            `json:"pix_fmt,omitempty"`
-	FieldOrder         string            `json:"field_order,omitempty"`
-	TimeBase           string            `json:"time_base,omitempty"`
-	Duration           string            `json:"duration,omitempty"`
-	DurationTs         int64             `json:"duration_ts,omitempty"`
-	StartPts           int64             `json:"start_pts,omitempty"`
-	StartTime          string            `json:"start_time,omitempty"`
-	DispositionObj     map[string]int    `json:"disposition,omitempty"`
-	Tags               map[string]string `json:"tags,omitempty"`
-}
 
 // Private functions (alphabetical)
 
@@ -402,15 +324,6 @@ func (p *Prober) extractCommonStreamInfo(stream ffprobeStreamOutput) StreamInfo 
 	}
 
 	return info
-}
-
-// StreamInfo holds common information for different stream types.
-type StreamInfo struct {
-	Index      int
-	Format     string
-	FormatFull string
-	Title      string
-	Language   string
 }
 
 // processVideoStream converts ffprobe data to a VideoStream.

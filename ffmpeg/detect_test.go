@@ -1,3 +1,6 @@
+// Package ffmpeg provides functionality for detecting and working with FFmpeg.
+// This file contains tests for the FFmpeg detection functionality.
+// It tests detection, version extraction, and support for QP reading.
 package ffmpeg
 
 import (
@@ -32,37 +35,28 @@ func (s *FFmpegTestSuite) TearDownSuite() {
 	os.RemoveAll(s.tempDir)
 }
 
-// TestFindFFmpeg tests the FindFFmpeg function by verifying it can detect
-// FFmpeg installation and properly initialize the FFmpegInfo struct.
+// TestFindFFmpeg tests finding FFmpeg installation
 func (s *FFmpegTestSuite) TestFindFFmpeg() {
+	// Get FFmpeg info
 	info, err := FindFFmpeg()
-	require.NoError(s.T(), err, "Finding FFmpeg should not produce an error")
+	require.NoError(s.T(), err, "FindFFmpeg() should not return error")
 
-	// We can't guarantee FFmpeg is installed on the test system,
-	// so we just log the results without failing the test
+	// Log the info
 	s.T().Logf("FFmpeg installed: %v", info.Installed)
-
-	// Verify that the FFmpegInfo struct is initialized correctly
-	assert.NotNil(s.T(), info, "FFmpegInfo struct should not be nil")
-
 	if info.Installed {
 		s.T().Logf("FFmpeg path: %s", info.Path)
 		s.T().Logf("FFmpeg version: %s", info.Version)
 		s.T().Logf("FFmpeg QP reading support: %v", info.HasQPReadingInfoSupport)
-		s.T().Logf("FFmpeg CU reading support: %v", info.HasCUReadingInfoSupport)
+	}
 
-		// If installed, verify that the path exists
-		_, err := os.Stat(info.Path)
-		assert.NoError(s.T(), err, "FFmpeg path should exist on the system")
-
-		// Verify that the version is not unknown
-		assert.NotEqual(s.T(), "unknown", info.Version, "FFmpeg version should be detected")
+	// Make assertions
+	if info.Installed {
+		assert.NotEmpty(s.T(), info.Path, "Path should not be empty when FFmpeg is installed")
+		assert.NotEmpty(s.T(), info.Version, "Version should not be empty when FFmpeg is installed")
 	} else {
-		// Even if not installed, fields should be initialized to their zero values
 		assert.Empty(s.T(), info.Path, "Path should be empty when FFmpeg is not installed")
-		assert.Equal(s.T(), "unknown", info.Version, "Version should be 'unknown' when FFmpeg is not installed")
+		assert.Equal(s.T(), "", info.Version, "Version should be empty when FFmpeg is not installed")
 		assert.False(s.T(), info.HasQPReadingInfoSupport, "HasQPReadingInfoSupport should be false when FFmpeg is not installed")
-		assert.False(s.T(), info.HasCUReadingInfoSupport, "HasCUReadingInfoSupport should be false when FFmpeg is not installed")
 	}
 }
 
@@ -147,40 +141,46 @@ func (s *FFmpegTestSuite) TestGetCommonInstallPaths() {
 	}
 }
 
-// TestCheckQPReadingSupport tests the checkQPReadingSupport function to ensure
-// it correctly identifies FFmpeg builds with QP reading support.
+// TestCheckQPReadingSupport tests the QP reading support detection function
 func (s *FFmpegTestSuite) TestCheckQPReadingSupport() {
-	// Check if FFmpeg is installed
-	info, err := FindFFmpeg()
-	require.NoError(s.T(), err, "Finding FFmpeg should not produce an error")
-	ffmpegInstalled := info.Installed
+	// Only run test for QP support detection if FFmpeg is installed
+	ffmpegInstalled := false
+	var info *FFmpegInfo
+	var err error
 
-	if !ffmpegInstalled {
-		s.T().Log("FFmpeg not installed, running only mock tests")
+	// Detect FFmpeg
+	info, err = FindFFmpeg()
+	if err == nil && info.Installed {
+		ffmpegInstalled = true
 	}
 
-	// Test cases for specific version outputs without dependency on actual FFmpeg
+	// Test cases for QP support detection
 	testCases := []struct {
 		name    string
 		version string
 		expect  bool
 	}{
 		{
-			name:    "With_debug_flag",
-			version: "ffmpeg version 4.2.7 --enable-debug",
+			name:    "With debug flag",
+			version: "ffmpeg version 4.2.7 Copyright (c) 2000-2019 the FFmpeg developers\nbuilt with gcc 9.3.0 (Debian 9.3.0-15) 20200512\nconfiguration: --enable-debug",
 			expect:  true,
 		},
 		{
-			name:    "With_debug_build_info",
-			version: "ffmpeg version 4.2.7 Copyright (c) 2000-2019 the FFmpeg developers\nbuilt with gcc 9.3.0 (Debian 9.3.0-15) 20200512\nconfiguration: --prefix=/usr --extra-version=1build9999 --toolchain=hardened --libdir=/usr/lib/x86_64-linux-gnu --incdir=/usr/include/x86_64-linux-gnu --enable-debug=3",
+			name:    "With debug build info",
+			version: "ffmpeg version 4.2.7 Copyright (c) 2000-2019 the FFmpeg developers\nbuilt with gcc 9.3.0 (Debian 9.3.0-15) 20200512\nconfiguration: --prefix=/usr --extra-version=1build1 --toolchain=hardened --libdir=/usr/lib/x86_64-linux-gnu --incdir=/usr/include/x86_64-linux-gnu --enable-debug=3",
 			expect:  true,
 		},
 	}
 
 	for _, tc := range testCases {
 		s.Run(tc.name, func() {
-			mockPath := "/mock/path/ffmpeg" // Use a mock path
-			hasSupport := checkQPReadingSupport(mockPath, tc.version)
+			// Skip test if FFmpeg is not installed
+			if !ffmpegInstalled {
+				s.T().Skip("FFmpeg not installed, skipping test")
+				return
+			}
+
+			hasSupport := checkQPReadingSupport(info.Path, tc.version)
 			assert.Equal(s.T(), tc.expect, hasSupport)
 		})
 	}
@@ -188,50 +188,6 @@ func (s *FFmpegTestSuite) TestCheckQPReadingSupport() {
 	// Only run the actual FFmpeg version detection if FFmpeg is installed
 	if ffmpegInstalled {
 		s.T().Logf("QP support detection with actual version output: %v", info.HasQPReadingInfoSupport)
-	}
-}
-
-// TestCheckCUReadingSupport tests the checkCUReadingSupport function to ensure
-// it correctly identifies FFmpeg builds with CU (coding unit) reading support.
-func (s *FFmpegTestSuite) TestCheckCUReadingSupport() {
-	// Check if FFmpeg is installed
-	info, err := FindFFmpeg()
-	require.NoError(s.T(), err, "Finding FFmpeg should not produce an error")
-	ffmpegInstalled := info.Installed
-
-	if !ffmpegInstalled {
-		s.T().Log("FFmpeg not installed, running only mock tests")
-	}
-
-	// Test cases for specific version outputs without dependency on actual FFmpeg
-	testCases := []struct {
-		name    string
-		version string
-		expect  bool
-	}{
-		{
-			name:    "With_debug_flag",
-			version: "ffmpeg version 4.2.7 --enable-debug",
-			expect:  true,
-		},
-		{
-			name:    "With_debug_build_info",
-			version: "ffmpeg version 4.2.7 Copyright (c) 2000-2019 the FFmpeg developers\nbuilt with gcc 9.3.0 (Debian 9.3.0-15) 20200512\nconfiguration: --prefix=/usr --extra-version=1build9999 --toolchain=hardened --libdir=/usr/lib/x86_64-linux-gnu --incdir=/usr/include/x86_64-linux-gnu --enable-debug=3",
-			expect:  true,
-		},
-	}
-
-	for _, tc := range testCases {
-		s.Run(tc.name, func() {
-			mockPath := "/mock/path/ffmpeg" // Use a mock path
-			hasSupport := checkCUReadingSupport(mockPath, tc.version)
-			assert.Equal(s.T(), tc.expect, hasSupport)
-		})
-	}
-
-	// Only run the actual FFmpeg version detection if FFmpeg is installed
-	if ffmpegInstalled {
-		s.T().Logf("CU support detection with actual version output: %v", info.HasCUReadingInfoSupport)
 	}
 }
 

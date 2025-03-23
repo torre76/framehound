@@ -74,17 +74,18 @@ func (b *BitrateAnalyzer) Analyze(ctx context.Context, filePath string, resultCh
 		return err
 	}
 
-	// Set up done channel and error for processing
+	// Set up done channel and error channel for processing
 	done := make(chan struct{})
-	var processErr error
+	errCh := make(chan error, 1) // Buffered channel to prevent goroutine leak
 
 	// Process the data in a goroutine
 	go func() {
 		defer close(done)
-		processErr = b.processOutput(childCtx, stdout, resultCh, cancel)
+		err := b.processOutput(childCtx, stdout, resultCh, cancel)
+		errCh <- err // Send error (or nil) to error channel
 	}()
 
-	return b.waitForCompletion(ctx, cmd, done, processErr, cancel)
+	return b.waitForCompletion(ctx, cmd, done, errCh, cancel)
 }
 
 // setupCommand creates and starts the FFprobe command.
@@ -234,11 +235,12 @@ func (b *BitrateAnalyzer) processVideoFrame(ctx context.Context, frameInfo ffpro
 }
 
 // waitForCompletion waits for the processing to complete or the context to be cancelled.
-func (b *BitrateAnalyzer) waitForCompletion(ctx context.Context, cmd *exec.Cmd, done chan struct{}, processErr error, cancel context.CancelFunc) error {
+func (b *BitrateAnalyzer) waitForCompletion(ctx context.Context, cmd *exec.Cmd, done chan struct{}, errCh chan error, cancel context.CancelFunc) error {
 	// Wait for completion or timeout
 	select {
 	case <-done:
 		// Normal completion
+		processErr := <-errCh // Get the error from the channel
 		if processErr != nil {
 			return processErr
 		}
@@ -251,6 +253,7 @@ func (b *BitrateAnalyzer) waitForCompletion(ctx context.Context, cmd *exec.Cmd, 
 		// Context cancelled or timed out
 		cancel() // Make sure child context is cancelled
 		<-done   // Wait for processing goroutine to complete
+		<-errCh  // Drain the error channel to prevent goroutine leak
 		return ctx.Err()
 	}
 }
