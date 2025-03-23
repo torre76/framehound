@@ -21,152 +21,13 @@ var titleFieldsRegex = regexp.MustCompile(`[\s._-]+`)
 
 // Private functions (alphabetical)
 
-// cleanFilename transforms a filename into a clean, readable title by removing
-// common video file artifacts like resolution, codec names, and release tags.
-// It ensures consistent formatting for display purposes in user interfaces.
-func cleanFilename(filename string) string {
-	// Remove file extension
-	base := filepath.Base(filename)
-	name := strings.TrimSuffix(base, filepath.Ext(base))
-
-	// Replace special characters with spaces
-	name = titleFieldsRegex.ReplaceAllString(name, " ")
-
-	// Remove common suffixes
-	suffixes := []string{
-		"1080p", "720p", "480p", "360p", "240p",
-		"bdrip", "brrip", "bluray", "dvdrip", "webrip", "web-dl", "web",
-		"hevc", "x264", "x265", "h264", "h265", "h 264", "h 265",
-		"aac", "ac3", "dts", "hdtv", "pdtv", "proper", "internal",
-		"xvid", "divx", "retail", "repack", "extended", "unrated",
-		"multi", "multisubs", "dubbed", "subbed", "subs", "hardcoded",
-	}
-
-	lowerName := strings.ToLower(name)
-	for _, suffix := range suffixes {
-		pattern := " " + suffix + "$"
-		if regexp.MustCompile(pattern).MatchString(lowerName) {
-			name = regexp.MustCompile("(?i)"+pattern).ReplaceAllString(name, "")
-		}
-	}
-
-	// Trim spaces
-	name = strings.TrimSpace(name)
-
-	// Format the title
-	return formatAsTitle(name)
-}
-
-// formatAsTitle converts a string to title case following proper English title
-// capitalization rules for articles, prepositions, and conjunctions.
-// It handles special cases such as acronyms and words that should remain uppercase.
-func formatAsTitle(s string) string {
-	// Words to keep lowercase
-	lowerWords := map[string]bool{
-		"a": true, "an": true, "the": true,
-		"and": true, "but": true, "or": true, "nor": true,
-		"in": true, "on": true, "at": true, "by": true, "for": true, "with": true, "to": true, "from": true,
-		"of": true,
-	}
-
-	// Words to keep uppercase
-	upperWords := map[string]bool{
-		"id": true, "tv": true, "ii": true, "iii": true, "iv": true, "v": true, "vi": true,
-		"vii": true, "viii": true, "ix": true, "x": true, "xi": true, "xii": true,
-		"uk": true, "usa": true, "us": true, "eu": true, "ufo": true, "un": true, "nato": true,
-	}
-
-	words := strings.Fields(s)
-	for i, word := range words {
-		// Skip empty words
-		if word == "" {
-			continue
-		}
-
-		// Check if word should be all uppercase
-		wordLower := strings.ToLower(word)
-		if upperWords[wordLower] {
-			words[i] = strings.ToUpper(wordLower)
-			continue
-		}
-
-		// For other words, capitalize first letter unless
-		// it's a lowercase word not at the beginning or end
-		if i > 0 && i < len(words)-1 && lowerWords[wordLower] {
-			words[i] = wordLower
-		} else {
-			runes := []rune(wordLower)
-			if len(runes) > 0 {
-				runes[0] = []rune(strings.ToUpper(string(runes[0])))[0]
-			}
-			words[i] = string(runes)
-		}
-	}
-
-	return strings.Join(words, " ")
-}
-
-// getContainerTitle extracts a user-friendly title from the container's metadata.
-// It first checks for an explicit title tag, then falls back to the filename,
-// and finally uses stream titles if no better option is available.
-func getContainerTitle(info *ContainerInfo) string {
-	// Try to get the filename
-	if info.General.Tags != nil {
-		// First check for standard title tag
-		if title, ok := info.General.Tags["title"]; ok && title != "" {
-			return title
-		}
-
-		// Then check for filename
-		if filename, ok := info.General.Tags["file_path"]; ok && filename != "" {
-			return cleanFilename(filename)
-		}
-	}
-
-	// If no title or filename, use the first video stream title if available
-	if len(info.VideoStreams) > 0 && info.VideoStreams[0].Title != "" {
-		return info.VideoStreams[0].Title
-	}
-
-	// Last resort: return a generic title
-	return "Untitled Media"
-}
-
-// removeUnicodeZeroWidthChars strips invisible Unicode characters from a string.
-// These characters can cause display issues in terminals and text interfaces
-// and may also interfere with string comparison operations.
-func removeUnicodeZeroWidthChars(s string) string {
-	// List of zero-width Unicode characters to remove
-	zeroWidthChars := []string{
-		"\u200B", // ZERO WIDTH SPACE
-		"\u200C", // ZERO WIDTH NON-JOINER
-		"\u200D", // ZERO WIDTH JOINER
-		"\u200E", // LEFT-TO-RIGHT MARK
-		"\u200F", // RIGHT-TO-LEFT MARK
-		"\u2060", // WORD JOINER
-		"\u2061", // FUNCTION APPLICATION
-		"\u2062", // INVISIBLE TIMES
-		"\u2063", // INVISIBLE SEPARATOR
-		"\u2064", // INVISIBLE PLUS
-		"\uFEFF", // ZERO WIDTH NO-BREAK SPACE
-	}
-
-	// Replace all zero-width characters with empty string
-	result := s
-	for _, char := range zeroWidthChars {
-		result = strings.ReplaceAll(result, char, "")
-	}
-
-	return result
-}
-
 // Public functions (alphabetical)
 
 // GetContainerTitle returns a user-friendly title for the container based on its metadata.
 // It follows a hierarchical approach to find the most appropriate title representation
 // for displaying to users in interfaces and logs.
 func (p *Prober) GetContainerTitle(info *ContainerInfo) string {
-	return getContainerTitle(info)
+	return p.getContainerTitle(info)
 }
 
 // GetExtendedContainerInfo extracts comprehensive metadata about a media file.
@@ -316,7 +177,7 @@ func (p *Prober) extractCommonStreamInfo(stream ffprobeStreamOutput) StreamInfo 
 	// Get title and language from stream tags
 	if stream.Tags != nil {
 		if t, ok := stream.Tags["title"]; ok {
-			info.Title = removeUnicodeZeroWidthChars(t)
+			info.Title = p.removeUnicodeZeroWidthChars(t)
 		}
 		if l, ok := stream.Tags["language"]; ok {
 			info.Language = l
@@ -533,6 +394,145 @@ func (p *Prober) parseRational(value string) float64 {
 	}
 
 	return num / den
+}
+
+// cleanFilename transforms a filename into a clean, readable title by removing
+// common video file artifacts like resolution, codec names, and release tags.
+// It ensures consistent formatting for display purposes in user interfaces.
+func (p *Prober) cleanFilename(filename string) string {
+	// Remove file extension
+	base := filepath.Base(filename)
+	name := strings.TrimSuffix(base, filepath.Ext(base))
+
+	// Replace special characters with spaces
+	name = titleFieldsRegex.ReplaceAllString(name, " ")
+
+	// Remove common suffixes
+	suffixes := []string{
+		"1080p", "720p", "480p", "360p", "240p",
+		"bdrip", "brrip", "bluray", "dvdrip", "webrip", "web-dl", "web",
+		"hevc", "x264", "x265", "h264", "h265", "h 264", "h 265",
+		"aac", "ac3", "dts", "hdtv", "pdtv", "proper", "internal",
+		"xvid", "divx", "retail", "repack", "extended", "unrated",
+		"multi", "multisubs", "dubbed", "subbed", "subs", "hardcoded",
+	}
+
+	lowerName := strings.ToLower(name)
+	for _, suffix := range suffixes {
+		pattern := " " + suffix + "$"
+		if regexp.MustCompile(pattern).MatchString(lowerName) {
+			name = regexp.MustCompile("(?i)"+pattern).ReplaceAllString(name, "")
+		}
+	}
+
+	// Trim spaces
+	name = strings.TrimSpace(name)
+
+	// Format the title
+	return p.formatAsTitle(name)
+}
+
+// formatAsTitle converts a string to title case following proper English title
+// capitalization rules for articles, prepositions, and conjunctions.
+// It handles special cases such as acronyms and words that should remain uppercase.
+func (p *Prober) formatAsTitle(s string) string {
+	// Words to keep lowercase
+	lowerWords := map[string]bool{
+		"a": true, "an": true, "the": true,
+		"and": true, "but": true, "or": true, "nor": true,
+		"in": true, "on": true, "at": true, "by": true, "for": true, "with": true, "to": true, "from": true,
+		"of": true,
+	}
+
+	// Words to keep uppercase
+	upperWords := map[string]bool{
+		"id": true, "tv": true, "ii": true, "iii": true, "iv": true, "v": true, "vi": true,
+		"vii": true, "viii": true, "ix": true, "x": true, "xi": true, "xii": true,
+		"uk": true, "usa": true, "us": true, "eu": true, "ufo": true, "un": true, "nato": true,
+	}
+
+	words := strings.Fields(s)
+	for i, word := range words {
+		// Skip empty words
+		if word == "" {
+			continue
+		}
+
+		// Check if word should be all uppercase
+		wordLower := strings.ToLower(word)
+		if upperWords[wordLower] {
+			words[i] = strings.ToUpper(wordLower)
+			continue
+		}
+
+		// For other words, capitalize first letter unless
+		// it's a lowercase word not at the beginning or end
+		if i > 0 && i < len(words)-1 && lowerWords[wordLower] {
+			words[i] = wordLower
+		} else {
+			runes := []rune(wordLower)
+			if len(runes) > 0 {
+				runes[0] = []rune(strings.ToUpper(string(runes[0])))[0]
+			}
+			words[i] = string(runes)
+		}
+	}
+
+	return strings.Join(words, " ")
+}
+
+// getContainerTitle extracts a user-friendly title from the container's metadata.
+// It first checks for an explicit title tag, then falls back to the filename,
+// and finally uses stream titles if no better option is available.
+func (p *Prober) getContainerTitle(info *ContainerInfo) string {
+	// Try to get the filename
+	if info.General.Tags != nil {
+		// First check for standard title tag
+		if title, ok := info.General.Tags["title"]; ok && title != "" {
+			return title
+		}
+
+		// Then check for filename
+		if filename, ok := info.General.Tags["file_path"]; ok && filename != "" {
+			return p.cleanFilename(filename)
+		}
+	}
+
+	// If no title or filename, use the first video stream title if available
+	if len(info.VideoStreams) > 0 && info.VideoStreams[0].Title != "" {
+		return info.VideoStreams[0].Title
+	}
+
+	// Last resort: return a generic title
+	return "Untitled Media"
+}
+
+// removeUnicodeZeroWidthChars strips invisible Unicode characters from a string.
+// These characters can cause display issues in terminals and text interfaces
+// and may also interfere with string comparison operations.
+func (p *Prober) removeUnicodeZeroWidthChars(s string) string {
+	// List of zero-width Unicode characters to remove
+	zeroWidthChars := []string{
+		"\u200B", // ZERO WIDTH SPACE
+		"\u200C", // ZERO WIDTH NON-JOINER
+		"\u200D", // ZERO WIDTH JOINER
+		"\u200E", // LEFT-TO-RIGHT MARK
+		"\u200F", // RIGHT-TO-LEFT MARK
+		"\u2060", // WORD JOINER
+		"\u2061", // FUNCTION APPLICATION
+		"\u2062", // INVISIBLE TIMES
+		"\u2063", // INVISIBLE SEPARATOR
+		"\u2064", // INVISIBLE PLUS
+		"\uFEFF", // ZERO WIDTH NO-BREAK SPACE
+	}
+
+	// Replace all zero-width characters with empty string
+	result := s
+	for _, char := range zeroWidthChars {
+		result = strings.ReplaceAll(result, char, "")
+	}
+
+	return result
 }
 
 // NewProber creates a new Prober instance configured with the provided FFmpeg information.
