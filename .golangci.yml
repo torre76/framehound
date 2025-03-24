@@ -1,7 +1,5 @@
-version: 2
 linters:
-  disable:
-    - all
+  disable-all: true
   enable:
     - errcheck     # Detect unchecked errors
     - gosimple     # Simplify code
@@ -17,10 +15,7 @@ linters:
     - unparam      # Find unused function parameters
     - gocyclo      # Check function cyclomatic complexity
 
-severity:
-  default-severity: warning
-  
-settings:
+linters-settings:
   revive:
     rules:
       - name: exported
@@ -30,24 +25,12 @@ settings:
     min-complexity: 15
 
 issues:
-  max-issues-per-linter: 0
-  max-same-issues: 0
-  fix: false
-  exclude-rules:
-    - text: "G204: Subprocess launched with a potential tainted input"
-      linters:
-        - gosec
-    - text: "G306: Expect WriteFile permissions to be 0600 or less"
-      linters:
-        - gosec
-    - text: "stutters; consider calling this Info"
-      linters:
-        - revive
-  exclude-dirs:
-    - test
+  exclude:
+    - "G204: Subprocess launched with a potential tainted input"
+    - "G306: Expect WriteFile permissions to be 0600 or less"
+    - "stutters; consider calling this Info"
+  exclude-files:
+    - ".*_test.go$"
 
 run:
   timeout: 5m
-  tests: false
-  skip-files:
-    - ".*_test.go$"
