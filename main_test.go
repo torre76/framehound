@@ -498,9 +498,9 @@ func (s *MainTestSuite) TestSaveMediaInfoBBCode() {
 	assert.Contains(s.T(), contentStr, "[/color][/size][/b]")
 	assert.Contains(s.T(), contentStr, "[b]Title:[/b]")
 	assert.Contains(s.T(), contentStr, "[color=#FF9900]")
-	assert.Contains(s.T(), contentStr, "🎬 MEDIA INFORMATION SUMMARY")
-	assert.Contains(s.T(), contentStr, "📦 CONTAINER INFORMATION")
-	assert.Contains(s.T(), contentStr, "🎞️ VIDEO STREAMS")
+	assert.Contains(s.T(), contentStr, "🎬 [size=100]MEDIA INFORMATION SUMMARY")
+	assert.Contains(s.T(), contentStr, "📦 [size=100]CONTAINER INFORMATION")
+	assert.Contains(s.T(), contentStr, "🎞️ [size=100]VIDEO STREAMS")
 	assert.Contains(s.T(), contentStr, "[url=https://github.com/torre76/framehound]FrameHound[/url]")
 
 	// Test specific data from the test container info
@@ -511,8 +511,8 @@ func (s *MainTestSuite) TestSaveMediaInfoBBCode() {
 	assert.Contains(s.T(), contentStr, "AAC")        // Audio codec
 
 	// Make sure all sections are present
-	assert.Contains(s.T(), contentStr, "🔊 AUDIO STREAMS")
-	assert.Contains(s.T(), contentStr, "💬 SUBTITLE STREAMS")
+	assert.Contains(s.T(), contentStr, "🔊 [size=100]AUDIO STREAMS")
+	assert.Contains(s.T(), contentStr, "💬 [size=100]SUBTITLE STREAMS")
 }
 
 // TestWriteBBCodeMediaInfoSections tests the individual section writer functions for BBCode formatting.
@@ -526,7 +526,7 @@ func (s *MainTestSuite) TestWriteBBCodeMediaInfoSections() {
 	w.Flush()
 	headerOutput := sb.String()
 	assert.Contains(s.T(), headerOutput, "[b][size=16][color=#3399FF]")
-	assert.Contains(s.T(), headerOutput, "🎬 MEDIA INFORMATION SUMMARY")
+	assert.Contains(s.T(), headerOutput, "🎬 [size=100]MEDIA INFORMATION SUMMARY")
 	assert.Contains(s.T(), headerOutput, "[b]Title:[/b]")
 	assert.Contains(s.T(), headerOutput, "Test Title")
 	assert.Contains(s.T(), headerOutput, "[b]Filename:[/b]")
@@ -541,7 +541,7 @@ func (s *MainTestSuite) TestWriteBBCodeMediaInfoSections() {
 	writeBBCodeMediaInfoContainerSection(w, s.testContainerInfo)
 	w.Flush()
 	containerOutput := sb.String()
-	assert.Contains(s.T(), containerOutput, "📦 CONTAINER INFORMATION")
+	assert.Contains(s.T(), containerOutput, "📦 [size=100]CONTAINER INFORMATION")
 	assert.Contains(s.T(), containerOutput, "[b]Format:[/b]")
 	assert.Contains(s.T(), containerOutput, "[color=#FF9900]MPEG-4[/color]")
 	assert.Contains(s.T(), containerOutput, "[b]Duration:[/b]")
@@ -554,7 +554,7 @@ func (s *MainTestSuite) TestWriteBBCodeMediaInfoSections() {
 	writeBBCodeMediaInfoVideoStreams(w, s.testContainerInfo.VideoStreams, s.testContainerInfo)
 	w.Flush()
 	videoOutput := sb.String()
-	assert.Contains(s.T(), videoOutput, "🎞️ VIDEO STREAMS")
+	assert.Contains(s.T(), videoOutput, "🎞️ [size=100]VIDEO STREAMS")
 	assert.Contains(s.T(), videoOutput, "[b]Codec:[/b]")
 	assert.Contains(s.T(), videoOutput, "[color=#FF9900]H.264[/color]")
 	assert.Contains(s.T(), videoOutput, "[b]Resolution:[/b]")
@@ -571,6 +571,7 @@ func (s *MainTestSuite) TestWriteBBCodeMediaInfoSections() {
 	assert.Contains(s.T(), footerOutput, "[url=https://github.com/torre76/framehound]FrameHound[/url]")
 	assert.Contains(s.T(), footerOutput, "Generated with")
 	assert.Contains(s.T(), footerOutput, "🐾")
+	assert.Contains(s.T(), footerOutput, "[align=right][color=#666666]")
 }
 
 // TestMainTestSuite runs the test suite.

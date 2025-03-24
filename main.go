@@ -1085,7 +1085,7 @@ func writeBBCodeMediaInfoHeader(w *tabwriter.Writer, containerTitle, fileName st
 
 	// Write summary header
 	fmt.Fprintln(w, "[b][size=16][color=#3399FF]===========================================[/color][/size][/b]")
-	fmt.Fprintln(w, "[b][size=16][color=#3399FF]🎬 MEDIA INFORMATION SUMMARY[/color][/size][/b]")
+	fmt.Fprintln(w, "[b][color=#3399FF]🎬 [size=100]MEDIA INFORMATION SUMMARY[/size][/color][/b]")
 	fmt.Fprintln(w, "[b][size=16][color=#3399FF]===========================================[/color][/size][/b]")
 	fmt.Fprintln(w)
 
@@ -1131,7 +1131,7 @@ func writeBBCodeMediaInfoBasicData(w *tabwriter.Writer, info *ffmpeg.ContainerIn
 // writeBBCodeMediaInfoContainerSection writes the container information section with BBCode
 func writeBBCodeMediaInfoContainerSection(w *tabwriter.Writer, info *ffmpeg.ContainerInfo) {
 	fmt.Fprintln(w, "[b][size=16][color=#3399FF]===========================================[/color][/size][/b]")
-	fmt.Fprintln(w, "[b][size=16][color=#3399FF]📦 CONTAINER INFORMATION[/color][/size][/b]")
+	fmt.Fprintln(w, "[b][color=#3399FF]📦 [size=100]CONTAINER INFORMATION[/size][/color][/b]")
 	fmt.Fprintln(w, "[b][size=16][color=#3399FF]===========================================[/color][/size][/b]")
 	fmt.Fprintln(w)
 
@@ -1169,7 +1169,7 @@ func writeBBCodeMediaInfoVideoStreams(w *tabwriter.Writer, streams []ffmpeg.Vide
 	}
 
 	fmt.Fprintln(w, "[b][size=16][color=#3399FF]===========================================[/color][/size][/b]")
-	fmt.Fprintln(w, "[b][size=16][color=#3399FF]🎞️ VIDEO STREAMS[/color][/size][/b]")
+	fmt.Fprintln(w, "[b][color=#3399FF]🎞️ [size=100]VIDEO STREAMS[/size][/color][/b]")
 	fmt.Fprintln(w, "[b][size=16][color=#3399FF]===========================================[/color][/size][/b]")
 
 	// Calculate total audio bitrate
@@ -1236,7 +1236,7 @@ func writeBBCodeMediaInfoAudioStreams(w *tabwriter.Writer, streams []ffmpeg.Audi
 	}
 
 	fmt.Fprintln(w, "[b][size=16][color=#3399FF]===========================================[/color][/size][/b]")
-	fmt.Fprintln(w, "[b][size=16][color=#3399FF]🔊 AUDIO STREAMS[/color][/size][/b]")
+	fmt.Fprintln(w, "[b][color=#3399FF]🔊 [size=100]AUDIO STREAMS[/size][/color][/b]")
 	fmt.Fprintln(w, "[b][size=16][color=#3399FF]===========================================[/color][/size][/b]")
 
 	for i, stream := range streams {
@@ -1273,7 +1273,7 @@ func writeBBCodeMediaInfoSubtitleStreams(w *tabwriter.Writer, streams []ffmpeg.S
 	}
 
 	fmt.Fprintln(w, "[b][size=16][color=#3399FF]===========================================[/color][/size][/b]")
-	fmt.Fprintln(w, "[b][size=16][color=#3399FF]💬 SUBTITLE STREAMS[/color][/size][/b]")
+	fmt.Fprintln(w, "[b][color=#3399FF]💬 [size=100]SUBTITLE STREAMS[/size][/color][/b]")
 	fmt.Fprintln(w, "[b][size=16][color=#3399FF]===========================================[/color][/size][/b]")
 
 	for i, stream := range streams {
@@ -1298,7 +1298,7 @@ func writeBBCodeMediaInfoChapters(w *tabwriter.Writer, chapters []ffmpeg.Chapter
 	}
 
 	fmt.Fprintln(w, "[b][size=16][color=#3399FF]===========================================[/color][/size][/b]")
-	fmt.Fprintln(w, "[b][size=16][color=#3399FF]📑 CHAPTERS[/color][/size][/b]")
+	fmt.Fprintln(w, "[b][color=#3399FF]📑 [size=100]CHAPTERS[/size][/color][/b]")
 	fmt.Fprintln(w, "[b][size=16][color=#3399FF]===========================================[/color][/size][/b]")
 
 	for _, chapter := range chapters {
@@ -1348,7 +1348,7 @@ func writeBBCodeMediaInfoAttachments(w *tabwriter.Writer, attachments []ffmpeg.A
 	}
 
 	fmt.Fprintln(w, "[b][size=16][color=#3399FF]===========================================[/color][/size][/b]")
-	fmt.Fprintln(w, "[b][size=16][color=#3399FF]📎 ATTACHMENTS[/color][/size][/b]")
+	fmt.Fprintln(w, "[b][color=#3399FF]📎 [size=100]ATTACHMENTS[/size][/color][/b]")
 	fmt.Fprintln(w, "[b][size=16][color=#3399FF]===========================================[/color][/size][/b]")
 
 	for i, attachment := range attachments {
@@ -1368,9 +1368,11 @@ func writeBBCodeMediaInfoFooter(w *tabwriter.Writer) {
 	fmt.Fprintln(w, "[b][size=16][color=#3399FF]===========================================[/color][/size][/b]")
 	fmt.Fprintf(w, "[b]Analysis Generated:[/b] [color=#FF9900]%s[/color]\n", time.Now().Format(time.RFC1123))
 	fmt.Fprintf(w, "[b]FrameHound Version:[/b] [color=#FF9900]%s[/color]\n", Version)
-	fmt.Fprintln(w)
-	fmt.Fprintln(w, "[center][color=#666666]Generated with [url=https://github.com/torre76/framehound]FrameHound[/url] 🐾[/color][/center]")
 	fmt.Fprintln(w, "[b][size=16][color=#3399FF]===========================================[/color][/size][/b]")
+
+	// Add empty line and then the signature right-aligned
+	fmt.Fprintln(w)
+	fmt.Fprintln(w, "[align=right][color=#666666]Generated with [url=https://github.com/torre76/framehound]FrameHound[/url] 🐾[/color][/align]")
 }
 
 // saveMediaInfoBBCode saves a BBCode formatted media info report with emojis and styling
