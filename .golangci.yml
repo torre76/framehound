@@ -1,3 +1,4 @@
+# Configuration version for golangci-lint
 version: "2"
 
 linters:
@@ -11,18 +12,18 @@ linters:
     - revive       # Fast, configurable, extensible, flexible, and beautiful linter for Go
     - unconvert    # Remove unnecessary type conversions
     - unparam      # Find unused function parameters
-    - gosec      
-    - gocyclo
+    - gosec        # Inspects source code for security problems
+    - gocyclo      # Calculates cyclomatic complexity of functions
   disable:
-    - errcheck
+    - errcheck     # Disabled: checks for unchecked errors in code
   settings:
     gocyclo:
-      min-complexity: 15
+      min-complexity: 15  # Functions with complexity >= 15 will be reported
     gosec:
       excludes:
-        - G104
-        - G204
-        - G301
-        - G304
+        - G104    # Excluded: errors unhandled
+        - G204    # Excluded: subprocess launched with variable
+        - G301    # Excluded: poor file permissions used
+        - G304    # Excluded: file path provided as taint input
 run:
-  timeout: 5m 
+  timeout: 5m     # Maximum time for analysis 

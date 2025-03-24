@@ -186,7 +186,7 @@ type ExecutablePaths struct {
 
 // FFmpegInfo contains information about the FFmpeg installation.
 // It provides details about the path, version, and capabilities of the installed FFmpeg.
-type FFmpegInfo struct {
+type FFmpegInfo struct { //nolint:revive // Intentionally allowing stutter in type name for clarity
 	// Path is the absolute path to the FFmpeg executable
 	Path string
 

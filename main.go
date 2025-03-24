@@ -1,3 +1,5 @@
+// Package main provides the main entry point for the FrameHound application.
+// FrameHound is a media analysis tool that extracts and visualizes video quality metrics.
 package main
 
 import (
@@ -177,7 +179,7 @@ func getFrameRate(info *ffmpeg.ContainerInfo) float64 {
 	return frameRate
 }
 
-func versionPrinter(c *cli.Context) {
+func versionPrinter(_ *cli.Context) {
 	summaryStyle := color.New(color.FgCyan, color.Bold)
 	valueStyle := color.New(color.Bold)
 	regularStyle := color.New(color.Reset)
@@ -1047,13 +1049,13 @@ func getEstimatedFrameCount(filePath string) (int64, error) {
 	}
 
 	// Calculate from video stream properties - simple and fast approach
-	var estimatedFrameCount int64 = 0
+	var estimatedFrameCount int64
 
 	// Check each video stream
 	for _, stream := range containerInfo.VideoStreams {
 		// Get frame rate and duration
 		if stream.FrameRate > 0 {
-			var duration float64 = stream.Duration
+			var duration = stream.Duration
 
 			// If stream duration is not available, try container duration
 			if duration <= 0 && containerInfo.General.DurationF > 0 {
