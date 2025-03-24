@@ -10,15 +10,18 @@
   <a href="https://goreportcard.com/report/github.com/torre76/framehound"><img src="https://goreportcard.com/badge/github.com/torre76/framehound" alt="Go Report Card"></a>
 </p>
 
-A tool for analyzing video frame bitrates and extracting detailed media container information.
+FrameHound is a tool for analyzing video files, with a focus on frame-level metrics and quality assessment.
 
 ## Features
 
-- **Media Container Analysis**: Extract comprehensive metadata about media containers
-- **Bitrate Analysis**: Frame-by-frame bitrate information with CSV output
-- **Detailed Reports**: Generate detailed text reports with file and stream information
-- **Progress Tracking**: Visual progress bars with ETA during analysis
-- **User-Friendly Output**: Clean, color-coded terminal output
+- Automatic detection of FFmpeg installation
+- Support for QP (Quantization Parameter) analysis of video files
+- Frame-by-frame bitrate analysis with CSV export
+- Detailed media container information extraction
+- BBCode-formatted reports for forum posting
+- Real-time processing of video frames
+- Support for multiple codecs (H.264, HEVC, AV1, VP9, MPEG-2)
+- Ordered frame output with duplicate frame filtering
 
 ## Requirements
 
@@ -81,12 +84,23 @@ framehound --version
 framehound -v
 ```
 
-### Output
+### Output Files
 
 FrameHound generates the following outputs in the reports directory:
 
 1. `mediainfo.txt`: Detailed text report with comprehensive media information
-2. `bitrate.csv`: CSV file with frame-by-frame bitrate information
+2. `mediainfo.bbcode.txt`: BBCode-formatted report for forum posting
+3. `bitrate.csv`: CSV file with frame-by-frame bitrate information
+
+### BBCode Reports
+
+The BBCode report feature generates stylized output that can be directly posted to forums that support BBCode formatting. The report includes:
+
+- Color-coded sections with emojis for better visual organization
+- Highlighted important values in orange
+- Bold headers and labels
+- Complete information about the media container and streams
+- FrameHound signature with GitHub URL
 
 Example output:
 
@@ -168,6 +182,14 @@ func main() {
     // Implementation details depend on specific needs
 }
 ```
+
+## How It Works
+
+FrameHound works by utilizing FFmpeg's capabilities to extract detailed information about media files:
+
+1. **Container Information**: Uses ffprobe to extract metadata about the container format, streams, and properties
+2. **Bitrate Analysis**: Processes the video to extract frame-by-frame bitrate information
+3. **Report Generation**: Creates formatted reports with the collected information
 
 ## License
 

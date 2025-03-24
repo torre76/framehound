@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 
+	"text/tabwriter"
+
 	"github.com/fatih/color"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -467,6 +469,108 @@ func createFakeContainerInfo(filePath string, fileSize int64) *ffmpeg.ContainerI
 	}
 
 	return containerInfo
+}
+
+// TestSaveMediaInfoBBCode tests that the saveMediaInfoBBCode function correctly
+// creates a BBCode-formatted information file.
+func (s *MainTestSuite) TestSaveMediaInfoBBCode() {
+	// Create subdirectory for this test
+	testDir := filepath.Join(s.tempDir, "bbcode_test")
+	err := os.MkdirAll(testDir, 0755)
+	require.NoError(s.T(), err)
+
+	// Call the function to generate the BBCode report
+	err = saveMediaInfoBBCode(s.testContainerInfo, testDir, s.prober)
+	require.NoError(s.T(), err)
+
+	// Check that the file was created
+	bbcodeFilePath := filepath.Join(testDir, "mediainfo.bbcode.txt")
+	_, err = os.Stat(bbcodeFilePath)
+	assert.NoError(s.T(), err)
+
+	// Read the file content
+	content, err := os.ReadFile(bbcodeFilePath)
+	require.NoError(s.T(), err)
+	contentStr := string(content)
+
+	// Check for expected BBCode elements
+	assert.Contains(s.T(), contentStr, "[b][size=16][color=#3399FF]")
+	assert.Contains(s.T(), contentStr, "[/color][/size][/b]")
+	assert.Contains(s.T(), contentStr, "[b]Title:[/b]")
+	assert.Contains(s.T(), contentStr, "[color=#FF9900]")
+	assert.Contains(s.T(), contentStr, "🎬 MEDIA INFORMATION SUMMARY")
+	assert.Contains(s.T(), contentStr, "📦 CONTAINER INFORMATION")
+	assert.Contains(s.T(), contentStr, "🎞️ VIDEO STREAMS")
+	assert.Contains(s.T(), contentStr, "[url=https://github.com/torre76/framehound]FrameHound[/url]")
+
+	// Test specific data from the test container info
+	assert.Contains(s.T(), contentStr, "Test Movie") // Title from container info
+	assert.Contains(s.T(), contentStr, "MPEG-4")     // Format
+	assert.Contains(s.T(), contentStr, "H.264")      // Video codec
+	assert.Contains(s.T(), contentStr, "1920x1080")  // Resolution
+	assert.Contains(s.T(), contentStr, "AAC")        // Audio codec
+
+	// Make sure all sections are present
+	assert.Contains(s.T(), contentStr, "🔊 AUDIO STREAMS")
+	assert.Contains(s.T(), contentStr, "💬 SUBTITLE STREAMS")
+}
+
+// TestWriteBBCodeMediaInfoSections tests the individual section writer functions for BBCode formatting.
+func (s *MainTestSuite) TestWriteBBCodeMediaInfoSections() {
+	// Setup a string buffer to capture output
+	var sb strings.Builder
+	w := tabwriter.NewWriter(&sb, 0, 0, 2, ' ', tabwriter.StripEscape)
+
+	// Test header section
+	writeBBCodeMediaInfoHeader(w, "Test Title", "test.mp4", 1, 2, 3)
+	w.Flush()
+	headerOutput := sb.String()
+	assert.Contains(s.T(), headerOutput, "[b][size=16][color=#3399FF]")
+	assert.Contains(s.T(), headerOutput, "🎬 MEDIA INFORMATION SUMMARY")
+	assert.Contains(s.T(), headerOutput, "[b]Title:[/b]")
+	assert.Contains(s.T(), headerOutput, "Test Title")
+	assert.Contains(s.T(), headerOutput, "[b]Filename:[/b]")
+	assert.Contains(s.T(), headerOutput, "test.mp4")
+	assert.Contains(s.T(), headerOutput, "1 video stream, 2 audio streams, 3 subtitle tracks")
+
+	// Reset buffer for next test
+	sb.Reset()
+	w = tabwriter.NewWriter(&sb, 0, 0, 2, ' ', tabwriter.StripEscape)
+
+	// Test container section
+	writeBBCodeMediaInfoContainerSection(w, s.testContainerInfo)
+	w.Flush()
+	containerOutput := sb.String()
+	assert.Contains(s.T(), containerOutput, "📦 CONTAINER INFORMATION")
+	assert.Contains(s.T(), containerOutput, "[b]Format:[/b]")
+	assert.Contains(s.T(), containerOutput, "[color=#FF9900]MPEG-4[/color]")
+	assert.Contains(s.T(), containerOutput, "[b]Duration:[/b]")
+
+	// Reset buffer for next test
+	sb.Reset()
+	w = tabwriter.NewWriter(&sb, 0, 0, 2, ' ', tabwriter.StripEscape)
+
+	// Test video streams section
+	writeBBCodeMediaInfoVideoStreams(w, s.testContainerInfo.VideoStreams, s.testContainerInfo)
+	w.Flush()
+	videoOutput := sb.String()
+	assert.Contains(s.T(), videoOutput, "🎞️ VIDEO STREAMS")
+	assert.Contains(s.T(), videoOutput, "[b]Codec:[/b]")
+	assert.Contains(s.T(), videoOutput, "[color=#FF9900]H.264[/color]")
+	assert.Contains(s.T(), videoOutput, "[b]Resolution:[/b]")
+	assert.Contains(s.T(), videoOutput, "[color=#FF9900]1920x1080 pixels[/color]")
+
+	// Reset buffer for next test
+	sb.Reset()
+	w = tabwriter.NewWriter(&sb, 0, 0, 2, ' ', tabwriter.StripEscape)
+
+	// Test footer section
+	writeBBCodeMediaInfoFooter(w)
+	w.Flush()
+	footerOutput := sb.String()
+	assert.Contains(s.T(), footerOutput, "[url=https://github.com/torre76/framehound]FrameHound[/url]")
+	assert.Contains(s.T(), footerOutput, "Generated with")
+	assert.Contains(s.T(), footerOutput, "🐾")
 }
 
 // TestMainTestSuite runs the test suite.

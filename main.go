@@ -686,6 +686,11 @@ func analyzeCommand(c *cli.Context) error {
 		return fmt.Errorf("error saving media info: %w", err)
 	}
 
+	// Save BBCode formatted media information
+	if err := saveMediaInfoBBCode(containerInfo, outputDir, prober); err != nil {
+		return fmt.Errorf("error saving BBCode media info: %w", err)
+	}
+
 	// Create a bitrate analyzer
 	bitrateAnalyzer, err := ffmpeg.NewBitrateAnalyzer(ffmpegInfo)
 	if err != nil {
@@ -1072,4 +1077,358 @@ func getEstimatedFrameCount(filePath string) (int64, error) {
 	}
 
 	return estimatedFrameCount, nil
+}
+
+// writeBBCodeMediaInfoHeader writes the header section of the media info BBCode file
+func writeBBCodeMediaInfoHeader(w *tabwriter.Writer, containerTitle, fileName string, videoCount, audioCount, subtitleCount int) {
+	pluralizeClient := pluralize.NewClient()
+
+	// Write summary header
+	fmt.Fprintln(w, "[b][size=16][color=#3399FF]===========================================[/color][/size][/b]")
+	fmt.Fprintln(w, "[b][size=16][color=#3399FF]🎬 MEDIA INFORMATION SUMMARY[/color][/size][/b]")
+	fmt.Fprintln(w, "[b][size=16][color=#3399FF]===========================================[/color][/size][/b]")
+	fmt.Fprintln(w)
+
+	// Title and filename
+	fmt.Fprintf(w, "[b]Title:[/b]\t%s\n", containerTitle)
+	fmt.Fprintf(w, "[b]Filename:[/b]\t%s\n", fileName)
+	fmt.Fprintln(w)
+
+	// Stream counts
+	fmt.Fprintf(w, "[b]Streams:[/b]\t%d %s, %d %s, %d %s\n",
+		videoCount, pluralizeClient.Pluralize("video stream", videoCount, false),
+		audioCount, pluralizeClient.Pluralize("audio stream", audioCount, false),
+		subtitleCount, pluralizeClient.Pluralize("subtitle track", subtitleCount, false))
+	fmt.Fprintln(w)
+}
+
+// writeBBCodeMediaInfoBasicData writes the basic container data section with BBCode formatting
+func writeBBCodeMediaInfoBasicData(w *tabwriter.Writer, info *ffmpeg.ContainerInfo) {
+	// Calculate bitrate if not available
+	bitRate := parseBitRate(info.General.BitRate)
+	if bitRate == 0 && info.General.DurationF > 0 {
+		sizeBytes, err := strconv.ParseInt(strings.Fields(info.General.Size)[0], 10, 64)
+		if err == nil && sizeBytes > 0 {
+			bitRate = int64(float64(sizeBytes*8) / info.General.DurationF)
+		}
+	}
+
+	// Format size with human-readable form
+	sizeInBytes := int64(0)
+	if sizeFields := strings.Fields(info.General.Size); len(sizeFields) > 0 {
+		if parsedSize, err := strconv.ParseInt(sizeFields[0], 10, 64); err == nil {
+			sizeInBytes = parsedSize
+		}
+	}
+	humanSize := formatHumanReadableSize(int(sizeInBytes))
+
+	// Write bitrate and size
+	fmt.Fprintf(w, "[b]Bitrate:[/b]\t[color=#FF9900]%.2f Kbps[/color]\n", float64(bitRate)/1000)
+	fmt.Fprintf(w, "[b]Size:[/b]\t[color=#FF9900]%s[/color]\n", humanSize)
+	fmt.Fprintln(w)
+}
+
+// writeBBCodeMediaInfoContainerSection writes the container information section with BBCode
+func writeBBCodeMediaInfoContainerSection(w *tabwriter.Writer, info *ffmpeg.ContainerInfo) {
+	fmt.Fprintln(w, "[b][size=16][color=#3399FF]===========================================[/color][/size][/b]")
+	fmt.Fprintln(w, "[b][size=16][color=#3399FF]📦 CONTAINER INFORMATION[/color][/size][/b]")
+	fmt.Fprintln(w, "[b][size=16][color=#3399FF]===========================================[/color][/size][/b]")
+	fmt.Fprintln(w)
+
+	fmt.Fprintf(w, "[b]Format:[/b]\t[color=#FF9900]%s[/color]\n", info.General.Format)
+
+	// Format the duration both as seconds and human-readable form
+	humanDuration := formatDuration(info.General.DurationF)
+
+	// Format seconds as integer if it's a whole number
+	var durationStr string
+	if info.General.DurationF == float64(int(info.General.DurationF)) {
+		durationStr = fmt.Sprintf("%d seconds", int(info.General.DurationF))
+	} else {
+		durationStr = fmt.Sprintf("%.3f seconds", info.General.DurationF)
+	}
+
+	fmt.Fprintf(w, "[b]Duration:[/b]\t[color=#FF9900]%s[/color] (%s)\n", durationStr, humanDuration)
+
+	// Write tags if available
+	if len(info.General.Tags) > 0 {
+		fmt.Fprintln(w, "\n[b]Tags:[/b]")
+		for key, value := range info.General.Tags {
+			if key != "file_path" { // Skip file_path as we already displayed it
+				fmt.Fprintf(w, "  [b]%s:[/b]\t[color=#FF9900]%s[/color]\n", key, value)
+			}
+		}
+	}
+	fmt.Fprintln(w)
+}
+
+// writeBBCodeMediaInfoVideoStreams writes video stream information with BBCode
+func writeBBCodeMediaInfoVideoStreams(w *tabwriter.Writer, streams []ffmpeg.VideoStream, info *ffmpeg.ContainerInfo) {
+	if len(streams) == 0 {
+		return
+	}
+
+	fmt.Fprintln(w, "[b][size=16][color=#3399FF]===========================================[/color][/size][/b]")
+	fmt.Fprintln(w, "[b][size=16][color=#3399FF]🎞️ VIDEO STREAMS[/color][/size][/b]")
+	fmt.Fprintln(w, "[b][size=16][color=#3399FF]===========================================[/color][/size][/b]")
+
+	// Calculate total audio bitrate
+	totalAudioBitrate := int64(0)
+	for _, audio := range info.AudioStreams {
+		totalAudioBitrate += audio.BitRate
+	}
+
+	// Get container bitrate
+	containerBitrate := parseBitRate(info.General.BitRate)
+
+	for i, stream := range streams {
+		fmt.Fprintf(w, "\n[b][color=#3399FF]Stream #%d:[/color][/b]\n", i)
+		fmt.Fprintf(w, "  [b]Codec:[/b]\t[color=#FF9900]%s[/color]\n", stream.Format)
+
+		if stream.FormatProfile != "" {
+			fmt.Fprintf(w, "  [b]Codec Profile:[/b]\t[color=#FF9900]%s[/color]\n", stream.FormatProfile)
+		}
+
+		if stream.Title != "" {
+			fmt.Fprintf(w, "  [b]Title:[/b]\t[color=#FF9900]%s[/color]\n", stream.Title)
+		}
+
+		fmt.Fprintf(w, "  [b]Resolution:[/b]\t[color=#FF9900]%dx%d pixels[/color]\n", stream.Width, stream.Height)
+		if stream.DisplayAspectRatio > 0 {
+			fmt.Fprintf(w, "  [b]Aspect Ratio:[/b]\t[color=#FF9900]%.3f[/color]\n", stream.DisplayAspectRatio)
+		}
+		fmt.Fprintf(w, "  [b]Frame Rate:[/b]\t[color=#FF9900]%.3f fps[/color]\n", stream.FrameRate)
+
+		// Handle bitrate display with calculation if missing
+		videoBitrate := stream.BitRate
+		if videoBitrate <= 0 && len(streams) == 1 && containerBitrate > 0 {
+			// For a single video stream, estimate bitrate by subtracting audio from container bitrate
+			estimatedBitrate := containerBitrate - totalAudioBitrate
+			if estimatedBitrate > 0 {
+				fmt.Fprintf(w, "  [b]Bit Rate:[/b]\t[color=#FF9900]%.2f Kbps[/color] (estimated)\n", float64(estimatedBitrate)/1000)
+			}
+			// Don't display anything if bitrate can't be calculated
+		} else if videoBitrate > 0 {
+			fmt.Fprintf(w, "  [b]Bit Rate:[/b]\t[color=#FF9900]%.2f Kbps[/color]\n", float64(videoBitrate)/1000)
+		}
+
+		fmt.Fprintf(w, "  [b]Bit Depth:[/b]\t[color=#FF9900]%d bits[/color]\n", stream.BitDepth)
+
+		if stream.ColorSpace != "" {
+			fmt.Fprintf(w, "  [b]Color Space:[/b]\t[color=#FF9900]%s[/color]\n", stream.ColorSpace)
+		}
+
+		if stream.ScanType != "" {
+			fmt.Fprintf(w, "  [b]Scan Type:[/b]\t[color=#FF9900]%s[/color]\n", stream.ScanType)
+		}
+
+		if stream.Language != "" {
+			fmt.Fprintf(w, "  [b]Language:[/b]\t[color=#FF9900]%s[/color]\n", stream.Language)
+		}
+	}
+	fmt.Fprintln(w)
+}
+
+// writeBBCodeMediaInfoAudioStreams writes audio stream information with BBCode
+func writeBBCodeMediaInfoAudioStreams(w *tabwriter.Writer, streams []ffmpeg.AudioStream) {
+	if len(streams) == 0 {
+		return
+	}
+
+	fmt.Fprintln(w, "[b][size=16][color=#3399FF]===========================================[/color][/size][/b]")
+	fmt.Fprintln(w, "[b][size=16][color=#3399FF]🔊 AUDIO STREAMS[/color][/size][/b]")
+	fmt.Fprintln(w, "[b][size=16][color=#3399FF]===========================================[/color][/size][/b]")
+
+	for i, stream := range streams {
+		fmt.Fprintf(w, "\n[b][color=#3399FF]Stream #%d:[/color][/b]\n", i)
+		fmt.Fprintf(w, "  [b]Codec:[/b]\t[color=#FF9900]%s[/color]\n", stream.Format)
+
+		if stream.Title != "" {
+			fmt.Fprintf(w, "  [b]Title:[/b]\t[color=#FF9900]%s[/color]\n", stream.Title)
+		}
+
+		fmt.Fprintf(w, "  [b]Channels:[/b]\t[color=#FF9900]%d", stream.Channels)
+		if stream.ChannelLayout != "" {
+			fmt.Fprintf(w, " (%s)", stream.ChannelLayout)
+		}
+		fmt.Fprintln(w, "[/color]")
+
+		fmt.Fprintf(w, "  [b]Sampling Rate:[/b]\t[color=#FF9900]%d Hz[/color]\n", stream.SamplingRate)
+
+		if stream.BitRate > 0 {
+			fmt.Fprintf(w, "  [b]Bit Rate:[/b]\t[color=#FF9900]%.2f Kbps[/color]\n", float64(stream.BitRate)/1000)
+		}
+
+		if stream.Language != "" {
+			fmt.Fprintf(w, "  [b]Language:[/b]\t[color=#FF9900]%s[/color]\n", stream.Language)
+		}
+	}
+	fmt.Fprintln(w)
+}
+
+// writeBBCodeMediaInfoSubtitleStreams writes subtitle stream information with BBCode
+func writeBBCodeMediaInfoSubtitleStreams(w *tabwriter.Writer, streams []ffmpeg.SubtitleStream) {
+	if len(streams) == 0 {
+		return
+	}
+
+	fmt.Fprintln(w, "[b][size=16][color=#3399FF]===========================================[/color][/size][/b]")
+	fmt.Fprintln(w, "[b][size=16][color=#3399FF]💬 SUBTITLE STREAMS[/color][/size][/b]")
+	fmt.Fprintln(w, "[b][size=16][color=#3399FF]===========================================[/color][/size][/b]")
+
+	for i, stream := range streams {
+		fmt.Fprintf(w, "\n[b][color=#3399FF]Stream #%d:[/color][/b]\n", i)
+		fmt.Fprintf(w, "  [b]Format:[/b]\t[color=#FF9900]%s[/color]\n", stream.Format)
+
+		if stream.Title != "" {
+			fmt.Fprintf(w, "  [b]Title:[/b]\t[color=#FF9900]%s[/color]\n", stream.Title)
+		}
+
+		if stream.Language != "" {
+			fmt.Fprintf(w, "  [b]Language:[/b]\t[color=#FF9900]%s[/color]\n", stream.Language)
+		}
+	}
+	fmt.Fprintln(w)
+}
+
+// writeBBCodeMediaInfoChapters writes chapter information with BBCode
+func writeBBCodeMediaInfoChapters(w *tabwriter.Writer, chapters []ffmpeg.ChapterStream) {
+	if len(chapters) == 0 {
+		return
+	}
+
+	fmt.Fprintln(w, "[b][size=16][color=#3399FF]===========================================[/color][/size][/b]")
+	fmt.Fprintln(w, "[b][size=16][color=#3399FF]📑 CHAPTERS[/color][/size][/b]")
+	fmt.Fprintln(w, "[b][size=16][color=#3399FF]===========================================[/color][/size][/b]")
+
+	for _, chapter := range chapters {
+		fmt.Fprintf(w, "\n[b][color=#3399FF]Chapter #%d:[/color][/b]\n", chapter.ID)
+		if chapter.Title != "" {
+			fmt.Fprintf(w, "  [b]Title:[/b]\t[color=#FF9900]%s[/color]\n", chapter.Title)
+		}
+
+		// Format start and end times
+		var startTimeStr, endTimeStr string
+		if chapter.StartTime == float64(int(chapter.StartTime)) {
+			startTimeStr = fmt.Sprintf("%d seconds", int(chapter.StartTime))
+		} else {
+			startTimeStr = fmt.Sprintf("%.3f seconds", chapter.StartTime)
+		}
+
+		if chapter.EndTime == float64(int(chapter.EndTime)) {
+			endTimeStr = fmt.Sprintf("%d seconds", int(chapter.EndTime))
+		} else {
+			endTimeStr = fmt.Sprintf("%.3f seconds", chapter.EndTime)
+		}
+
+		fmt.Fprintf(w, "  [b]Start Time:[/b]\t[color=#FF9900]%s[/color]\n", startTimeStr)
+		fmt.Fprintf(w, "  [b]End Time:[/b]\t[color=#FF9900]%s[/color]\n", endTimeStr)
+
+		// Format chapter duration in human-readable form
+		chapterDuration := chapter.EndTime - chapter.StartTime
+		humanDuration := formatDuration(chapterDuration)
+
+		// Format duration seconds as integer if it's a whole number
+		var durationStr string
+		if chapterDuration == float64(int(chapterDuration)) {
+			durationStr = fmt.Sprintf("%d seconds", int(chapterDuration))
+		} else {
+			durationStr = fmt.Sprintf("%.3f seconds", chapterDuration)
+		}
+
+		fmt.Fprintf(w, "  [b]Duration:[/b]\t[color=#FF9900]%s[/color] (%s)\n", durationStr, humanDuration)
+	}
+	fmt.Fprintln(w)
+}
+
+// writeBBCodeMediaInfoAttachments writes attachment information with BBCode
+func writeBBCodeMediaInfoAttachments(w *tabwriter.Writer, attachments []ffmpeg.AttachmentStream) {
+	if len(attachments) == 0 {
+		return
+	}
+
+	fmt.Fprintln(w, "[b][size=16][color=#3399FF]===========================================[/color][/size][/b]")
+	fmt.Fprintln(w, "[b][size=16][color=#3399FF]📎 ATTACHMENTS[/color][/size][/b]")
+	fmt.Fprintln(w, "[b][size=16][color=#3399FF]===========================================[/color][/size][/b]")
+
+	for i, attachment := range attachments {
+		fmt.Fprintf(w, "\n[b][color=#3399FF]Attachment #%d:[/color][/b]\n", i+1)
+		if attachment.FileName != "" {
+			fmt.Fprintf(w, "  [b]Filename:[/b]\t[color=#FF9900]%s[/color]\n", attachment.FileName)
+		}
+		if attachment.MimeType != "" {
+			fmt.Fprintf(w, "  [b]MIME Type:[/b]\t[color=#FF9900]%s[/color]\n", attachment.MimeType)
+		}
+	}
+	fmt.Fprintln(w)
+}
+
+// writeBBCodeMediaInfoFooter writes the footer with metadata and signature
+func writeBBCodeMediaInfoFooter(w *tabwriter.Writer) {
+	fmt.Fprintln(w, "[b][size=16][color=#3399FF]===========================================[/color][/size][/b]")
+	fmt.Fprintf(w, "[b]Analysis Generated:[/b] [color=#FF9900]%s[/color]\n", time.Now().Format(time.RFC1123))
+	fmt.Fprintf(w, "[b]FrameHound Version:[/b] [color=#FF9900]%s[/color]\n", Version)
+	fmt.Fprintln(w)
+	fmt.Fprintln(w, "[center][color=#666666]Generated with [url=https://github.com/torre76/framehound]FrameHound[/url] 🐾[/color][/center]")
+	fmt.Fprintln(w, "[b][size=16][color=#3399FF]===========================================[/color][/size][/b]")
+}
+
+// saveMediaInfoBBCode saves a BBCode formatted media info report with emojis and styling
+func saveMediaInfoBBCode(info *ffmpeg.ContainerInfo, outputDir string, prober *ffmpeg.Prober) error {
+	// Create the output directory if it doesn't exist
+	err := os.MkdirAll(outputDir, 0755)
+	if err != nil {
+		return fmt.Errorf("error creating output directory: %w", err)
+	}
+
+	// Define output file path
+	outputPath := filepath.Join(outputDir, "mediainfo.bbcode.txt")
+
+	// Create the file
+	file, err := os.Create(outputPath)
+	if err != nil {
+		return fmt.Errorf("error creating BBCode mediainfo file: %w", err)
+	}
+	defer file.Close()
+
+	// Initialize tabwriter for better formatting
+	w := tabwriter.NewWriter(file, 0, 0, 2, ' ', tabwriter.StripEscape)
+
+	// Get the container title
+	containerTitle := prober.GetContainerTitle(info)
+
+	// Get the filename from the Tags map
+	fileName := ""
+	if info.General.Tags != nil {
+		if path, ok := info.General.Tags["file_path"]; ok {
+			fileName = filepath.Base(path)
+		}
+	}
+
+	// Count streams
+	videoCount := len(info.VideoStreams)
+	audioCount := len(info.AudioStreams)
+	subtitleCount := len(info.SubtitleStreams)
+
+	// Write the different sections of the report
+	writeBBCodeMediaInfoHeader(w, containerTitle, fileName, videoCount, audioCount, subtitleCount)
+	writeBBCodeMediaInfoBasicData(w, info)
+	writeBBCodeMediaInfoContainerSection(w, info)
+	writeBBCodeMediaInfoVideoStreams(w, info.VideoStreams, info)
+	writeBBCodeMediaInfoAudioStreams(w, info.AudioStreams)
+	writeBBCodeMediaInfoSubtitleStreams(w, info.SubtitleStreams)
+	writeBBCodeMediaInfoChapters(w, info.ChapterStreams)
+	writeBBCodeMediaInfoAttachments(w, info.AttachmentStreams)
+	writeBBCodeMediaInfoFooter(w)
+
+	// Flush buffered data to ensure it's written to the file
+	if err := w.Flush(); err != nil {
+		return fmt.Errorf("error flushing output: %w", err)
+	}
+
+	// Print confirmation message with proper styling
+	successStyle := color.New(color.FgGreen)
+	successStyle.Printf("✅ BBCode media information saved to %s\n", outputPath)
+
+	return nil
 }
