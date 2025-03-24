@@ -6,7 +6,6 @@ package ffmpeg
 
 import (
 	"encoding/json"
-	"regexp"
 	"sync"
 )
 
@@ -295,24 +294,6 @@ type QPAnalyzer struct {
 
 	// SupportsQPAnalysis indicates whether the installed FFmpeg supports QP analysis
 	SupportsQPAnalysis bool
-
-	// prober is used for getting video container information
-	prober ProberInterface
-
-	// Generic regex patterns (fallback)
-	genericNewFrameRegex  *regexp.Regexp
-	genericFrameTypeRegex *regexp.Regexp
-	genericQPRegex        *regexp.Regexp
-
-	// H.264 specific regex patterns
-	h264NewFrameRegex  *regexp.Regexp
-	h264FrameTypeRegex *regexp.Regexp
-	h264QPRegex        *regexp.Regexp
-
-	// HEVC specific regex patterns
-	hevcNewFrameRegex  *regexp.Regexp
-	hevcFrameTypeRegex *regexp.Regexp
-	hevcQPRegex        *regexp.Regexp
 }
 
 // QPReport contains comprehensive QP analysis statistics for a video file.
@@ -385,12 +366,6 @@ type QualityAnalyzer struct {
 
 	// SupportedCodecs contains the list of codecs supported by this analyzer
 	SupportedCodecs []string
-
-	// prober is used to check video codec compatibility
-	prober ProberInterface
-
-	// Quality analyzers that may be used by this analyzer
-	qpAnalyzer *QPAnalyzer
 }
 
 // QualityMetrics contains video quality comparison metrics.
