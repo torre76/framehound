@@ -6,7 +6,6 @@ linters:
     - govet        # Examine Go source code and reports suspicious constructs
     - ineffassign  # Detect ineffectual assignments
     - staticcheck  # Go static analysis
-    - typecheck    # Like the front-end of a Go compiler
     - unused       # Find unused variables, functions, constants
     - bodyclose    # Checks whether HTTP response bodies are closed
     - gosec        # Inspects source code for security problems
