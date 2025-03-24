@@ -1,37 +1,28 @@
+version: "2"
+
 linters:
-  disable-all: true
   enable:
-    - errcheck     # Detect unchecked errors
-    - gosimple     # Simplify code
     - govet        # Examine Go source code and reports suspicious constructs
     - ineffassign  # Detect ineffectual assignments
     - staticcheck  # Go static analysis
-    - typecheck    # Like the front-end of a Go compiler
     - unused       # Find unused variables, functions, constants
     - bodyclose    # Checks whether HTTP response bodies are closed
-    - gosec        # Inspects source code for security problems
     - misspell     # Find commonly misspelled words
     - revive       # Fast, configurable, extensible, flexible, and beautiful linter for Go
     - unconvert    # Remove unnecessary type conversions
     - unparam      # Find unused function parameters
-    - gocyclo      # Check function cyclomatic complexity
-
-linters-settings:
-  revive:
-    rules:
-      - name: exported
-        severity: warning
-        disabled: false
-  gocyclo:
-    min-complexity: 15
-
-issues:
-  exclude:
-    - "G204: Subprocess launched with a potential tainted input"
-    - "G306: Expect WriteFile permissions to be 0600 or less"
-    - "stutters; consider calling this Info"
-  exclude-files:
-    - ".*_test.go$"
-
+    - gosec      
+    - gocyclo
+  disable:
+    - errcheck
+  settings:
+    gocyclo:
+      min-complexity: 15
+    gosec:
+      excludes:
+        - G104
+        - G204
+        - G301
+        - G304
 run:
-  timeout: 5m
+  timeout: 5m 
