@@ -1,53 +1,31 @@
-version: 2
+version: "2"
+
 linters:
-  disable:
-    - all
   enable:
-    - errcheck     # Detect unchecked errors
-    - gosimple     # Simplify code
-    - govet        # Examine Go source code and reports suspicious constructs
-    - ineffassign  # Detect ineffectual assignments
-    - staticcheck  # Go static analysis
-    - unused       # Find unused variables, functions, constants
-    - bodyclose    # Checks whether HTTP response bodies are closed
-    - gosec        # Inspects source code for security problems
-    - misspell     # Find commonly misspelled words
-    - revive       # Fast, configurable, extensible, flexible, and beautiful linter for Go
-    - unconvert    # Remove unnecessary type conversions
-    - unparam      # Find unused function parameters
-    - gocyclo      # Check function cyclomatic complexity
+    - errcheck
+    - govet
+    - ineffassign
+    - staticcheck
+    - unused
+    - bodyclose
+    - gosec
+    - misspell
+    - revive
+    - unconvert
+    - unparam
+    - gocyclo
+  settings:
+    gocyclo:
+      min-complexity: 15
 
 severity:
-  default-severity: warning
-  
-settings:
-  revive:
-    rules:
-      - name: exported
-        severity: warning
-        disabled: false
-  gocyclo:
-    min-complexity: 15
+  default: warning
 
 issues:
   max-issues-per-linter: 0
   max-same-issues: 0
   fix: false
-  exclude-rules:
-    - text: "G204: Subprocess launched with a potential tainted input"
-      linters:
-        - gosec
-    - text: "G306: Expect WriteFile permissions to be 0600 or less"
-      linters:
-        - gosec
-    - text: "stutters; consider calling this Info"
-      linters:
-        - revive
-  exclude-dirs:
-    - test
 
 run:
   timeout: 5m
   tests: false
-  skip-files:
-    - ".*_test.go$"
